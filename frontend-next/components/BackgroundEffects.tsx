@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { RiskLevel } from '@/lib/types';
 
 interface BackgroundEffectsProps {
-  riskLevel: RiskLevel;
+  riskLevel: RiskLevel | null;
 }
 
 export function BackgroundEffects({ riskLevel }: BackgroundEffectsProps) {

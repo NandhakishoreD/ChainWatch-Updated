@@ -1,12 +1,13 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Activity, Shield, Radio } from 'lucide-react';
+import { Activity, Shield, Radio, Radar } from 'lucide-react';
 import { RiskLevel } from '@/lib/types';
 import { formatTimestamp } from '@/lib/utils';
+import Link from 'next/link';
 
 interface HeaderProps {
-  riskLevel: RiskLevel;
+  riskLevel: RiskLevel | null;
   lastUpdated: string | null;
 }
 
@@ -52,6 +53,15 @@ export function Header({ riskLevel, lastUpdated }: HeaderProps) {
 
           {/* Status indicators */}
           <div className="flex items-center gap-6">
+            {/* Port Monitor Link */}
+            <Link
+              href="/port-monitor"
+              className="flex items-center gap-2 text-xs font-mono text-slate-400 hover:text-cyan-400 transition-colors px-3 py-2 rounded-lg hover:bg-white/5 border border-transparent hover:border-cyan-500/20"
+            >
+              <Radar className="w-3.5 h-3.5" />
+              <span className="uppercase tracking-wider">Port Monitor</span>
+            </Link>
+
             {/* Live indicator */}
             <div className="flex items-center gap-2">
               <motion.div

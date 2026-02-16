@@ -6,6 +6,42 @@ import websockets
 from typing import Optional
 from backend.config import get_settings
 
+# Navigational status mapping
+NAV_STATUS_MAP = {
+    0: "Under Way",
+    1: "At Anchor",
+    2: "Not Under Command",
+    3: "Restricted Maneuverability",
+    4: "Constrained by Draught",
+    5: "Moored",
+    6: "Aground",
+    7: "Engaged in Fishing",
+    8: "Under Way Sailing",
+    14: "AIS-SART",
+    15: "Not Defined",
+}
+
+# Ship type categories
+SHIP_TYPE_MAP = {
+    range(20, 30): "Wing in Ground",
+    range(30, 36): "Fishing/Tug/Special",
+    range(36, 40): "Sailing/Pleasure",
+    range(40, 50): "High Speed Craft",
+    range(50, 60): "Special Craft",
+    range(60, 70): "Passenger",
+    range(70, 80): "Cargo",
+    range(80, 90): "Tanker",
+    range(90, 100): "Other",
+}
+
+
+def get_ship_type_name(type_code: int) -> str:
+    """Map ship type code to human-readable name."""
+    for type_range, name in SHIP_TYPE_MAP.items():
+        if type_code in type_range:
+            return name
+    return "Unknown"
+
 
 class AISStreamService:
     """Service for fetching real-time vessel data from AIS Stream API."""
@@ -21,13 +57,14 @@ class AISStreamService:
     ) -> dict:
         """
         Sample vessel data from a port area for a specified duration.
+        Captures both PositionReport and ShipStaticData for rich vessel info.
 
         Args:
             bounding_box: [[lat1, lon1], [lat2, lon2]] defining the area
             duration_seconds: How long to sample data (default 10 seconds)
 
         Returns:
-            dict with vessel_count, avg_speed, navigational_statuses, etc.
+            dict with vessel_count, avg_speed, navigational_statuses, vessels list, etc.
         """
         if not self.settings.aisstream_api_key:
             raise ValueError("AIS Stream API key not configured")
@@ -38,11 +75,11 @@ class AISStreamService:
 
         try:
             async with websockets.connect(self.ws_url) as websocket:
-                # Subscribe to the port area
+                # Subscribe to the port area — include both PositionReport and ShipStaticData
                 subscribe_message = {
                     "APIKey": self.settings.aisstream_api_key,
                     "BoundingBoxes": [bounding_box],
-                    "FilterMessageTypes": ["PositionReport"]
+                    "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
                 }
                 
                 await websocket.send(json.dumps(subscribe_message))
@@ -57,64 +94,130 @@ class AISStreamService:
                             message_count += 1
                             message = json.loads(message_json)
                             
+                            # Extract metadata (available on all message types)
+                            metadata = message.get("MetaData", {})
+                            vessel_mmsi = metadata.get("MMSI")
+                            
                             # Debug: Log first few messages
                             if message_count <= 3:
-                                print(f"[AIS] Message {message_count}: {message.get('MessageType', 'Unknown')}")
+                                print(f"[AIS] Message {message_count}: {message.get('MessageType', 'Unknown')} "
+                                      f"MMSI={vessel_mmsi} Ship={metadata.get('ShipName', 'N/A')}")
                             
-                            # Handle different message types
-                            if message.get("MessageType") == "PositionReport":
+                            msg_type = message.get("MessageType")
+                            
+                            if msg_type == "PositionReport":
                                 ais_msg = message.get("Message", {}).get("PositionReport", {})
-                                
                                 vessel_id = ais_msg.get("UserID")
+                                
                                 if vessel_id:
+                                    # Merge with existing data if we already have static info
+                                    existing = vessels.get(vessel_id, {})
+                                    
+                                    nav_status_code = ais_msg.get("NavigationalStatus", 15)
                                     vessels[vessel_id] = {
+                                        **existing,
                                         "mmsi": vessel_id,
+                                        "name": metadata.get("ShipName", existing.get("name", "Unknown")).strip().replace("@@", "").strip() or "Unknown",
                                         "latitude": ais_msg.get("Latitude"),
                                         "longitude": ais_msg.get("Longitude"),
-                                        "sog": ais_msg.get("Sog", 0),  # Speed over ground
-                                        "cog": ais_msg.get("Cog", 0),  # Course over ground
-                                        "nav_status": ais_msg.get("NavigationalStatus", 0),
+                                        "sog": round(ais_msg.get("Sog", 0), 1),
+                                        "cog": round(ais_msg.get("Cog", 0), 1),
+                                        "true_heading": ais_msg.get("TrueHeading", 0),
+                                        "nav_status": nav_status_code,
+                                        "nav_status_text": NAV_STATUS_MAP.get(nav_status_code, "Unknown"),
+                                        "rate_of_turn": ais_msg.get("RateOfTurn", 0),
                                     }
                                     
-                                    # Collect stats
                                     speed = ais_msg.get("Sog", 0)
                                     if speed is not None:
                                         speeds.append(speed)
                                     
-                                    nav_status = ais_msg.get("NavigationalStatus")
-                                    if nav_status is not None:
-                                        navigational_statuses.append(nav_status)
+                                    if nav_status_code is not None:
+                                        navigational_statuses.append(nav_status_code)
+
+                            elif msg_type == "ShipStaticData":
+                                static_msg = message.get("Message", {}).get("ShipStaticData", {})
+                                vessel_id = static_msg.get("UserID")
+                                
+                                if vessel_id:
+                                    existing = vessels.get(vessel_id, {})
+                                    ship_type_code = static_msg.get("Type", 0)
+                                    
+                                    raw_name = static_msg.get("Name", "Unknown")
+                                    clean_name = raw_name.strip().replace("@@", "").replace("@", "").strip() or "Unknown"
+                                    
+                                    raw_dest = static_msg.get("Destination", "")
+                                    clean_dest = raw_dest.strip().replace("@@", "").replace("@", "").strip() or "N/A"
+                                    
+                                    eta_data = static_msg.get("Eta", {})
+                                    eta_str = ""
+                                    if eta_data and eta_data.get("Month", 0) > 0:
+                                        eta_str = f"{eta_data.get('Month', 0):02d}-{eta_data.get('Day', 0):02d} {eta_data.get('Hour', 0):02d}:{eta_data.get('Minute', 0):02d}"
+                                    
+                                    dimension = static_msg.get("Dimension", {})
+                                    length = (dimension.get("A", 0) or 0) + (dimension.get("B", 0) or 0)
+                                    width = (dimension.get("C", 0) or 0) + (dimension.get("D", 0) or 0)
+                                    
+                                    vessels[vessel_id] = {
+                                        **existing,
+                                        "mmsi": vessel_id,
+                                        "name": clean_name,
+                                        "call_sign": static_msg.get("CallSign", "").strip() or "N/A",
+                                        "imo_number": static_msg.get("ImoNumber", 0),
+                                        "ship_type": ship_type_code,
+                                        "ship_type_text": get_ship_type_name(ship_type_code),
+                                        "destination": clean_dest,
+                                        "eta": eta_str,
+                                        "length": length,
+                                        "width": width,
+                                        "draught": static_msg.get("MaximumStaticDraught", 0),
+                                    }
 
                 except asyncio.TimeoutError:
-                    # Expected - we've sampled for the desired duration
-                    print(f"[AIS] Timeout after {duration_seconds}s. Received {message_count} messages, found {len(vessels)} vessels")
-                    pass
+                    print(f"[AIS] Timeout after {duration_seconds}s. "
+                          f"Received {message_count} messages, found {len(vessels)} unique vessels")
 
         except Exception as e:
-            # Log error and return empty result
             print(f"AIS Stream error: {str(e)}")
             return {
                 "vessel_count": 0,
                 "avg_speed": 0,
                 "stationary_count": 0,
                 "moving_count": 0,
+                "moored_count": 0,
+                "vessels": [],
                 "error": str(e)
             }
 
         # Calculate metrics
         vessel_count = len(vessels)
-        avg_speed = sum(speeds) / len(speeds) if speeds else 0
+        avg_speed = round(sum(speeds) / len(speeds), 2) if speeds else 0
         
-        # Count stationary vs moving vessels
-        # NavigationalStatus: 0=underway, 1=at anchor, 5=moored, etc.
-        stationary_count = sum(1 for s in navigational_statuses if s in [1, 5])
-        moving_count = sum(1 for s in navigational_statuses if s == 0)
+        # NavigationalStatus: 0=underway, 1=at anchor, 5=moored
+        stationary_count = sum(1 for s in navigational_statuses if s == 1)  # at anchor
+        moving_count = sum(1 for s in navigational_statuses if s == 0)  # underway
+        moored_count = sum(1 for s in navigational_statuses if s == 5)  # moored
+
+        # Determine congestion level
+        if vessel_count == 0:
+            congestion = "unknown"
+        elif vessel_count < 10:
+            congestion = "low"
+        elif vessel_count < 30:
+            congestion = "moderate"
+        elif vessel_count < 60:
+            congestion = "high"
+        else:
+            congestion = "critical"
 
         return {
             "vessel_count": vessel_count,
-            "avg_speed": round(avg_speed, 2),
+            "avg_speed": avg_speed,
             "stationary_count": stationary_count,
             "moving_count": moving_count,
+            "moored_count": moored_count,
+            "congestion_level": congestion,
+            "messages_received": message_count if 'message_count' in dir() else 0,
             "vessels": list(vessels.values())
         }
 

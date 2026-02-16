@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const riskLevel: RiskLevel = state?.aggregated_risk?.risk_level || null;
+  const riskLevel: RiskLevel | null = state?.aggregated_risk?.risk_level || null;
 
   useEffect(() => {
     // Fetch regions on mount
