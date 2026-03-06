@@ -5,7 +5,7 @@
 ```mermaid
 graph TB
     subgraph "Frontend Layer (Next.js)"
-        UI[Dashboard UI]
+        UI[Dashboard UI & 3D Globe]
         Components[React Components]
         API_Client[API Client]
     end
@@ -26,19 +26,28 @@ graph TB
         Weather_Agent[Weather Agent]
         Port_Agent[Port Agent]
         Aggregation_Agent[Aggregation Agent]
+        ML_Agent[ML Correlation Agent]
         Explanation_Agent[Explanation Agent]
+    end
+
+    subgraph "Machine Learning Engine"
+        CorrelationModel[Correlation Model]
+        ScikitLearn[Ridge / Random Forest]
+        JSON_Tape[risk_history.jsonl]
     end
 
     subgraph "Service Layer"
         LLM_Service[LLM Service]
         News_API[News API]
         Weather_API[Weather API]
+        AIS_Service[AIS Stream Service]
     end
 
     subgraph "External Services"
         OpenAI[OpenAI API]
         News_Source[External News Sources]
         Weather_Source[Weather Data Sources]
+        AISStream[AISStream.io Websocket]
     end
 
     UI --> API_Client
@@ -51,16 +60,24 @@ graph TB
     Orchestrator --> Weather_Agent
     Orchestrator --> Port_Agent
     Orchestrator --> Aggregation_Agent
+    Orchestrator --> ML_Agent
     Orchestrator --> Explanation_Agent
+    
     News_Agent --> News_API
     News_API --> News_Source
     Weather_Agent --> Weather_API
     Weather_API --> Weather_Source
+    Port_Agent --> AIS_Service
+    AIS_Service --> AISStream
+    
     News_Agent --> LLM_Service
-    Weather_Agent --> LLM_Service
     Port_Agent --> LLM_Service
     Explanation_Agent --> LLM_Service
     LLM_Service --> OpenAI
+    
+    ML_Agent --> CorrelationModel
+    CorrelationModel --> ScikitLearn
+    CorrelationModel --> JSON_Tape
     Main --> State_Store
 
     style UI fill:#e1f5ff
@@ -70,7 +87,9 @@ graph TB
     style Weather_Agent fill:#e1ffe1
     style Port_Agent fill:#fff0e1
     style Aggregation_Agent fill:#e1f0ff
+    style ML_Agent fill:#e1e1ff
     style Explanation_Agent fill:#f0ffe1
+    style CorrelationModel fill:#dcefff
     style LLM_Service fill:#ffe1e1
 ```
 
@@ -84,6 +103,7 @@ sequenceDiagram
     participant Orch as 🎯 Orchestrator
     participant State as 💾 State Store
     participant Agents as 🤖 Agents
+    participant ML as 📊 ML Engine
     participant LLM as 🧠 LLM Service
     participant ExtAPI as 🌐 External APIs
 
@@ -105,25 +125,34 @@ sequenceDiagram
     Agents-->>Orch: Weather risk result
 
     Orch->>Agents: PortAgent.run(region)
-    Agents->>LLM: Analyze port conditions
+    Agents->>ExtAPI: Fetch live vessel coordinates
+    ExtAPI-->>Agents: AIS binary payload
+    Agents->>LLM: Analyze port conditions & heuristics
     LLM-->>Agents: Port risk result
     Agents-->>Orch: Port risk result
 
+    Orch->>Agents: MLAgent.run(news, weather, port)
+    Agents->>ML: Predict delay & risk (Random Forest / Ridge)
+    ML-->>Agents: ML correlation insights & Feature Importances
+    Agents-->>Orch: ML Analysis Dict
+    
+    Orch->>ML: log_analysis_run() (Save to JSONL dataset)
+
     Orch->>Agents: AggregationAgent.run()
-    Agents-->>Orch: Aggregated risk score
+    Agents-->>Orch: Aggregated risk score (70% Heuristic, 30% ML)
 
     Orch->>Agents: ExplanationAgent.run()
-    Agents->>LLM: generate_explanation()
-    LLM-->>Agents: Plain-text explanation
+    Agents->>LLM: generate_explanation(heuristics + ML insights)
+    LLM-->>Agents: Statistically grounded explanation
     Agents-->>Orch: Explanation
 
     Orch->>State: Update with all results
     State-->>Orch: Confirmation
     Orch-->>API: Complete SystemState
     API-->>UI: SystemState response
-    UI->>User: Display risk dashboard
+    UI->>User: Display hybrid risk dashboard
 
-    Note over User,UI: User can now ask questions
+    Note over User,UI: User can now query insights
     User->>UI: Ask question in chat
     UI->>API: POST /chat
     API->>State: Get current state
@@ -139,57 +168,49 @@ sequenceDiagram
 ```mermaid
 graph TB
     subgraph "Frontend Components"
-        Dashboard[Dashboard Page]
+        Dashboard[Risk Overview Panel]
         Header[Header Component]
-        RegionSelector[Region Selector]
-        AnalyzeButton[Analyze Button]
-        RiskMeter[Risk Meter]
-        RiskCards[Risk Cards]
+        Globe[Interactive 3D Globe]
+        RiskCards[Risk Cards & Metric Bars]
+        MLStats[ML Feature Importances]
         ChatBot[Chat Bot]
-        EmptyState[Empty State]
-        BackgroundEffects[Background Effects]
     end
 
     subgraph "API Endpoints"
         Health[GET /health]
         Regions[GET /regions]
         Analyze["POST /analyze/{region}"]
+        VesselScan["GET /port/vessels/{region}"]
         GetState[GET /state]
-        StateSummary[GET /state/summary]
-        Chat[POST /chat]
+        Retrain["POST /ml/retrain"]
     end
 
     subgraph "Backend Modules"
         Config[config.py]
         State[state.py]
         Schemas[models/schemas.py]
+        SeedData[ml/seed_training_data.py]
     end
 
     Dashboard --> Header
-    Dashboard --> RegionSelector
-    Dashboard --> AnalyzeButton
-    Dashboard --> RiskMeter
+    Dashboard --> Globe
     Dashboard --> RiskCards
+    Dashboard --> MLStats
     Dashboard --> ChatBot
-    Dashboard --> EmptyState
-    Dashboard --> BackgroundEffects
 
-    AnalyzeButton --> Analyze
-    RegionSelector --> Regions
-    RiskMeter --> GetState
-    RiskCards --> GetState
-    ChatBot --> Chat
+    RiskCards --> Analyze
+    Globe --> VesselScan
+    ChatBot --> GetState
+    MLStats --> Retrain
 
     Analyze --> Config
     GetState --> State
-    Chat --> State
     Analyze --> Schemas
-    GetState --> Schemas
-    Chat --> Schemas
+    Retrain --> SeedData
 
     style Dashboard fill:#e3f2fd
     style Analyze fill:#fff3e0
-    style Chat fill:#f3e5f5
+    style Retrain fill:#f3e5f5
 ```
 
 ## Agent Architecture
@@ -218,18 +239,24 @@ classDiagram
         -analyze_port_conditions(region: str) dict
     }
 
+    class MLAgent {
+        +run(news_risk, weather_risk, port_risk) MLAnalysisOutput
+        -predict_delays() float
+    }
+
     class AggregationAgent {
-        +run(region, news_severity, weather_severity, port_severity) dict
-        -calculate_aggregated_risk() dict
+        +run(news, weather, port, ml_risk_score) dict
+        -calculate_blended_risk() dict
     }
 
     class ExplanationAgent {
-        +run(region, news_risk, weather_risk, port_risk, aggregated_risk) str
+        +run(news, weather, port, aggregated, ml_analysis) str
     }
 
     BaseAgent <|-- NewsAgent
     BaseAgent <|-- WeatherAgent
     BaseAgent <|-- PortAgent
+    BaseAgent <|-- MLAgent
     BaseAgent <|-- AggregationAgent
     BaseAgent <|-- ExplanationAgent
 
@@ -237,15 +264,16 @@ classDiagram
         -NewsAgent news_agent
         -WeatherAgent weather_agent
         -PortAgent port_agent
+        -MLAgent ml_agent
         -AggregationAgent aggregation_agent
         -ExplanationAgent explanation_agent
         +analyze(region: str) SystemState
-        +get_available_regions() list
     }
 
     Orchestrator --> NewsAgent
     Orchestrator --> WeatherAgent
     Orchestrator --> PortAgent
+    Orchestrator --> MLAgent
     Orchestrator --> AggregationAgent
     Orchestrator --> ExplanationAgent
 ```
@@ -254,16 +282,16 @@ classDiagram
 
 ```mermaid
 graph TB
-    subgraph "LLM Service"
+    subgraph "Core Services"
         LLM[LLMService]
-        Classify[classify_news_risk]
-        Generate[generate_explanation]
-        Answer[answer_chat_question]
+        ML[CorrelationModel (scikit-learn)]
+        DataLog[DataLogger (risk_history.jsonl)]
     end
 
     subgraph "External APIs"
         NewsAPI[News API Service]
         WeatherAPI[Weather API Service]
+        AISStream[AISStream Service]
     end
 
     subgraph "OpenAI Integration"
@@ -271,20 +299,22 @@ graph TB
         Model[GPT-4o-mini]
     end
 
-    Classify --> LLM
-    Generate --> LLM
-    Answer --> LLM
     LLM --> Client
     Client --> Model
 
-    NewsAgent[News Agent] --> Classify
-    WeatherAgent[Weather Agent] --> NewsAPI
-    PortAgent[Port Agent] --> Generate
-    ExplanationAgent[Explanation Agent] --> Generate
-    ChatEndpoint[Chat Endpoint] --> Answer
+    NewsAgent[News Agent] --> NewsAPI
+    WeatherAgent[Weather Agent] --> WeatherAPI
+    PortAgent[Port Agent] --> AISStream
+    MLAgent[ML Agent] --> ML
+    ML --> DataLog
+    
+    NewsAgent --> LLM
+    PortAgent --> LLM
+    ExplanationAgent[Explanation Agent] --> LLM
 
     style LLM fill:#ffebee
-    style Model fill:#e8f5e9
+    style ML fill:#e8f5e9
+    style DataLog fill:#fff8e1
 ```
 
 ## State Management Flow
@@ -297,7 +327,8 @@ stateDiagram-v2
     Processing --> NewsAnalysis: Orchestrator starts
     NewsAnalysis --> WeatherAnalysis: NewsAgent completes
     WeatherAnalysis --> PortAnalysis: WeatherAgent completes
-    PortAnalysis --> Aggregation: PortAgent completes
+    PortAnalysis --> MLAnalysis: PortAgent completes
+    MLAnalysis --> Aggregation: MLAgent completes
     Aggregation --> Explanation: AggregationAgent completes
     Explanation --> Completed: ExplanationAgent completes
 
@@ -309,15 +340,11 @@ stateDiagram-v2
         [*] --> NewsAnalysis
         NewsAnalysis --> WeatherAnalysis
         WeatherAnalysis --> PortAnalysis
-        PortAnalysis --> Aggregation
+        PortAnalysis --> MLAnalysis
+        MLAnalysis --> Aggregation
         Aggregation --> Explanation
         Explanation --> [*]
     }
-
-    Completed --> ChatReady: User opens chat
-    ChatReady --> ChatActive: User asks question
-    ChatActive --> ChatReady: Answer provided
-    ChatReady --> Idle: Chat closed
 ```
 
 ## Technology Stack
@@ -329,7 +356,6 @@ graph LR
         React[React 18]
         TypeScript[TypeScript]
         Tailwind[Tailwind CSS]
-        Framer[Framer Motion]
         Lucide[Lucide Icons]
     end
 
@@ -338,107 +364,49 @@ graph LR
         Python[Python 3.11+]
         Uvicorn[Uvicorn Server]
         Pydantic[Pydantic]
-        OpenAI[OpenAI SDK]
+    end
+    
+    subgraph "Machine Learning Engine"
+        ScikitLearn[scikit-learn]
+        Pandas[pandas]
+        Numpy[numpy]
     end
 
     subgraph "External Services"
-        OpenAI_API[OpenAI API]
+        OpenAI_API[OpenAI API (GPT-4o-mini)]
         News[News API]
-        Weather[Weather API]
+        Weather[OpenWeather API]
+        AIS[AISStream.io]
     end
 
     Next --> React
     React --> TypeScript
     TypeScript --> Tailwind
-    Tailwind --> Framer
-    Framer --> Lucide
+    Tailwind --> Lucide
 
     FastAPI --> Python
     Python --> Uvicorn
     Uvicorn --> Pydantic
-    Pydantic --> OpenAI
 
-    OpenAI --> OpenAI_API
-    News --> News_API
-    Weather --> Weather_API
+    FastAPI --> ScikitLearn
+    ScikitLearn --> Pandas
+    Pandas --> Numpy
+
+    Python --> OpenAI_API
+    Python --> News
+    Python --> Weather
+    Python --> AIS
 
     style Next fill:#0070f3
     style FastAPI fill:#009688
-    style OpenAI_API fill:#412991
-```
-
-## Risk Assessment Pipeline
-
-```mermaid
-graph TB
-    Start[User Initiates Analysis] --> Select[Select Region]
-    Select --> Validate[Validate Region]
-    Validate -->|Invalid| Error[Return Error]
-    Validate -->|Valid| News[Fetch News Articles]
-    News --> Classify[LLM Classifies Risk]
-    Classify --> Weather[Fetch Weather Data]
-    Weather --> WeatherRisk[Assess Weather Risk]
-    WeatherRisk --> Port[Analyze Port Conditions]
-    Port --> PortRisk[Assess Port Risk]
-    PortRisk --> Aggregate[Combine Risk Scores]
-    Aggregate --> Calculate[Calculate Overall Risk]
-    Calculate --> Explain[Generate Explanation]
-    Explain --> Store[Store in State]
-    Store --> Return[Return to Frontend]
-    Return --> Display[Display Dashboard]
-
-    style Start fill:#e3f2fd
-    style Display fill:#c8e6c9
-    style Error fill:#ffcdd2
-```
-
-## API Request/Response Flow
-
-```mermaid
-graph TB
-    subgraph "Frontend Request"
-        Req[HTTP Request]
-        Headers[Headers]
-        Body[Request Body]
-    end
-
-    subgraph "Backend Processing"
-        Auth[Authentication]
-        Validation[Input Validation]
-        BusinessLogic[Business Logic]
-        Database[State Store]
-    end
-
-    subgraph "Frontend Response"
-        Resp[HTTP Response]
-        Data[Response Data]
-        Error[Error Handling]
-    end
-
-    Req --> Headers
-    Req --> Body
-    Headers --> Auth
-    Body --> Validation
-    Auth --> BusinessLogic
-    Validation --> BusinessLogic
-    BusinessLogic --> Database
-    Database --> BusinessLogic
-    BusinessLogic --> Resp
-    Resp --> Data
-    Resp --> Error
-
-    style Req fill:#e1f5fe
-    style BusinessLogic fill:#fff3e0
-    style Resp fill:#e8f5e9
+    style ScikitLearn fill:#f39c12
 ```
 
 ## Key Architecture Patterns
 
-1. **Orchestrator Pattern**: Central coordinator manages multiple specialized agents
-2. **Agent Pattern**: Each risk type has a dedicated agent with single responsibility
-3. **Service Layer**: External API integrations abstracted into service classes
-4. **State Management**: Global state store for sharing analysis results
-5. **RESTful API**: Clean separation between frontend and backend
-6. **Component-Based UI**: Modular React components for maintainability
-7. **Async/Await**: Non-blocking operations for better performance
-8. **Dependency Injection**: Services injected into agents and orchestrator
+1. **Hybrid AI Architecture**: Combines deterministic rules with scikit-learn Machine Learning heuristics and LLM generative reporting.
+2. **Orchestrator Pattern**: Central coordinator manages multiple specialized agents executed sequentially.
+3. **ML Interception Pattern**: ML module intercepts agent telemetry dynamically before passing to standard aggregation workflows.
+4. **Service Layer Abstraction**: External APIs (OpenWeather, News, AIS Websockets) are completely isolated from Agent logic.
+5. **Cold-Start Bootstrapping**: Python scripts artificially seed highly correlated synthetic ground-truth data to bootstrap early Random Forest training.
+6. **Data Tape Pipeline**: Real-time analysis streams continually write to JSON Lines formatting (`risk_history.jsonl`) for perpetual auto-training logic.

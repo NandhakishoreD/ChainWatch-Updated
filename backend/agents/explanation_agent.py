@@ -17,6 +17,7 @@ class ExplanationAgent(BaseAgent):
         weather_risk: Optional[dict] = None,
         port_risk: Optional[dict] = None,
         aggregated_risk: Optional[dict] = None,
+        ml_analysis: Optional[dict] = None,
     ) -> str:
         """
         Generate a plain-language explanation of the risk assessment.
@@ -27,6 +28,7 @@ class ExplanationAgent(BaseAgent):
             weather_risk: Output from weather agent
             port_risk: Output from port agent
             aggregated_risk: Output from aggregation agent
+            ml_analysis: Output from ML correlation agent
 
         Returns:
             Plain-language explanation string
@@ -37,6 +39,7 @@ class ExplanationAgent(BaseAgent):
             weather_risk=weather_risk,
             port_risk=port_risk,
             aggregated_risk=aggregated_risk,
+            ml_analysis=ml_analysis,
         )
 
         return explanation

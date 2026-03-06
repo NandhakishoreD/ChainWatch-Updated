@@ -161,14 +161,13 @@ async def get_port_vessels(region: str):
         raise HTTPException(status_code=400, detail=f"No bounding box configured for {region}")
 
     try:
-        result = await ais_service.sample_port_vessels(bbox, duration_seconds=30)
-        return {
-            "region": region,
-            "port_name": region_config.get("port", region),
-            "bounding_box": bbox,
-            "center": {"lat": region_config["lat"], "lon": region_config["lon"]},
-            **result,
-        }
+        ais_service = AISStreamService()
+        port_data = await ais_service.sample_port_vessels(
+            region=region,
+            bounding_box=region_config["bbox"],
+            duration_seconds=8  # Quick scan
+        )
+        return port_data
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
@@ -193,7 +192,7 @@ async def get_port_stats(region: str):
         raise HTTPException(status_code=400, detail=f"No bounding box configured for {region}")
 
     try:
-        result = await ais_service.sample_port_vessels(bbox, duration_seconds=15)
+        result = await ais_service.sample_port_vessels(region, bbox, duration_seconds=15)
 
         # Calculate ship type breakdown from vessels
         type_breakdown = {}
@@ -242,7 +241,7 @@ async def get_port_risk_overview(region: str):
         analysis_task = orchestrator.analyze(region)
 
         if bbox:
-            vessel_task = ais_service.sample_port_vessels(bbox, duration_seconds=30)
+            vessel_task = ais_service.sample_port_vessels(region, bbox, duration_seconds=30)
             analysis_result, vessel_result = await asyncio.gather(
                 analysis_task, vessel_task, return_exceptions=True
             )
@@ -312,6 +311,23 @@ async def get_port_risk_overview(region: str):
         # AI explanation
         response["explanation"] = analysis_result.explanation
 
+        # ML correlation analysis results
+        if analysis_result.ml_analysis:
+            ml = analysis_result.ml_analysis
+            response["ml_analysis"] = {
+                "ml_risk_score": ml.ml_risk_score,
+                "ml_delay_hours": ml.ml_delay_hours,
+                "ml_risk_level": ml.ml_risk_level,
+                "top_correlations": ml.top_correlations,
+                "feature_importances": ml.feature_importances,
+                "confidence": ml.confidence,
+                "training_samples": ml.training_samples,
+                "model_r2_risk": ml.model_r2_risk,
+                "model_r2_delay": ml.model_r2_delay,
+            }
+        else:
+            response["ml_analysis"] = None
+
         # Live vessel data (from concurrent AIS scan)
         if isinstance(vessel_result, dict) and not isinstance(vessel_result, Exception):
             response["vessel_count"] = vessel_result.get("vessel_count", 0)
@@ -340,6 +356,37 @@ async def get_port_risk_overview(region: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to generate risk overview: {str(e)}"
         )
+
+
+@app.get("/ml/status")
+async def get_ml_status():
+    """
+    Get current ML model status — whether it's trained, how many samples
+    it has, and its accuracy metrics.
+    """
+    from backend.ml.correlation_model import get_model
+    from backend.services.data_logger import get_record_count
+    model = get_model()
+    return {
+        "is_trained": model.is_trained,
+        "training_samples": model.training_samples,
+        "total_history_records": get_record_count(),
+        "model_r2_risk": round(model.cv_risk_score, 3) if model.is_trained else None,
+        "model_r2_delay": round(model.cv_delay_score, 3) if model.is_trained else None,
+        "feature_importances": model.feature_importances,
+    }
+
+
+@app.post("/ml/retrain")
+async def retrain_ml_model():
+    """
+    Force retrain the ML model on all accumulated real + seed data.
+    Call this after running several analyses to improve model accuracy.
+    """
+    from backend.ml.correlation_model import get_model
+    model = get_model()
+    result = model.train()
+    return result
 
 
 if __name__ == "__main__":

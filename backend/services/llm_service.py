@@ -91,6 +91,7 @@ If no supply chain relevant news is found, return event_type "none" with severit
         weather_risk: Optional[dict],
         port_risk: Optional[dict],
         aggregated_risk: Optional[dict],
+        ml_analysis: Optional[dict] = None,
     ) -> str:
         """
         Generate a plain-language explanation of the overall risk assessment.
@@ -101,6 +102,7 @@ If no supply chain relevant news is found, return event_type "none" with severit
             weather_risk: Weather risk output
             port_risk: Port risk output
             aggregated_risk: Aggregated risk output
+            ml_analysis: ML correlation analysis output
 
         Returns:
             Plain-language explanation string
@@ -126,6 +128,33 @@ OVERALL RISK:
 - Risk Score: {getattr(aggregated_risk, 'risk_score', 'N/A') if aggregated_risk else 'N/A'}/5
 - Risk Level: {getattr(aggregated_risk, 'risk_level', 'N/A') if aggregated_risk else 'N/A'}"""
 
+        # Add ML insights if available
+        if ml_analysis:
+            ml_score = ml_analysis.get("ml_risk_score", "N/A")
+            ml_delay = ml_analysis.get("ml_delay_hours", "N/A")
+            ml_level = ml_analysis.get("ml_risk_level", "N/A")
+            top_corr = ml_analysis.get("top_correlations", [])
+            feat_imp = ml_analysis.get("feature_importances", {})
+            confidence = ml_analysis.get("confidence", 0)
+
+            context += f"""
+
+ML CORRELATION ANALYSIS (trained on historical data, confidence: {confidence:.0%}):
+- ML Risk Score: {ml_score}/5 (vs heuristic above)
+- ML Predicted Delay: {ml_delay} hours
+- ML Risk Level: {ml_level}"""
+
+            if top_corr:
+                context += "\n- Top Cross-Factor Correlations:"
+                for c in top_corr[:3]:
+                    context += f"\n  • {c['factor_1']} ↔ {c['factor_2']}: {c['correlation']:.2f} ({c['strength']})"
+
+            if feat_imp:
+                sorted_imp = sorted(feat_imp.items(), key=lambda x: x[1], reverse=True)[:3]
+                context += "\n- Top Risk Drivers (by ML feature importance):"
+                for name, imp in sorted_imp:
+                    context += f"\n  • {name}: {imp:.1f}%"
+
         prompt = f"""Based on the following supply chain risk assessment data, generate a clear, concise explanation for a business stakeholder.
 
 {context}
@@ -137,6 +166,7 @@ Requirements:
 4. Only reference facts from the provided data - do not speculate
 5. If risk is low, indicate business can proceed normally
 6. If risk is high, indicate caution is advised
+7. If ML analysis is available, briefly mention whether the ML model agrees or diverges from the heuristic assessment and what key correlations the model found
 
 Provide only the explanation text, no headers or formatting."""
 
@@ -151,7 +181,7 @@ Provide only the explanation text, no headers or formatting."""
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=300,
+                max_tokens=400,
             )
 
             return response.choices[0].message.content.strip()

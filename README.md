@@ -2,24 +2,24 @@
 
 **AI-Powered Supply Chain Risk Monitoring System**
 
-ChainWatch is an agentic MVP that monitors supply chain risks using orchestrated AI agents, LLMs for intelligent classification, and live external data sources. It provides real-time risk assessments for major global ports.
+ChainWatch is an advanced predictive supply chain monitoring system that utilizes a novel **hybrid architecture**. It orchestrates autonomous AI agents to evaluate real-time deterministic heuristics, and passes that data through a continuous Machine Learning correlation pipeline to deliver highly accurate, data-driven risk assessments and delay predictions for the world's major ports.
 
 ![Risk Levels](https://img.shields.io/badge/Risk%20Levels-Low%20%7C%20Medium%20%7C%20High-brightgreen)
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4+-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
 ## Features
 
-- **Multi-Agent Architecture** - Orchestrated agents for news, weather, and port analysis
-- **Live Port Monitor** - Real-time vessel tracking using AIS data (Position & Static reports)
-- **Full Risk Overview** - Combined analysis of supply chain risks + live vessel data
-- **AI-Powered Classification** - GPT-4o-mini for news event classification and explanations
-- **Dynamic Risk Scoring** - Weighted aggregation with transparent breakdowns
-- **Interactive Dashboard** - Sleek Next.js frontend with ambient risk-based theming and dark mode map
-- **AI Chatbot** - Ask questions about the current risk assessment
+- **Hybrid AI/ML Architecture** - Fuses multi-agent deterministic heuristics with predictive Machine Learning regression forests.
+- **Data-Driven Delay Prediction** - Random Forest model predicts exact disruption delays (in hours) based on cross-factor correlations.
+- **Live Port Monitor** - Real-time vessel congestion tracking using raw AIS binary streams via AISStream.io.
+- **Autonomous Orchestration** - Agents automatically fetch, process, and score news severity, weather conditions, and port activity.
+- **AI-Powered Explanations** - `gpt-4o-mini` interprets the ML data and heuristic logic to generate polished, statistically-grounded business reports.
+- **Interactive Dashboard** - Sleek, Next.js frontend featuring ambient risk theming, a 3D interactive globe, and transparent ML feature importance visualization.
 
 ## Supported Regions (19 Ports)
 
@@ -39,10 +39,10 @@ ChainWatch is an agentic MVP that monitors supply chain risks using orchestrated
 - Python 3.11+
 - Node.js 18+
 - API Keys:
-  - [OpenAI](https://platform.openai.com) - For AI classification
-  - [NewsAPI](https://newsapi.org) - For news data
-  - [OpenWeatherMap](https://openweathermap.org/api) - For weather data
-  - [AISStream.io](https://aisstream.io) - For live vessel tracking
+  - [OpenAI](https://platform.openai.com) 
+  - [NewsAPI](https://newsapi.org) 
+  - [OpenWeatherMap](https://openweathermap.org/api)
+  - [AISStream.io](https://aisstream.io)
 
 ### 1. Clone & Setup Backend
 
@@ -61,12 +61,7 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 
-```bash
-# Copy environment template
-cp .env.example .env
-```
-
-Edit `.env` with your API keys:
+Copy `.env.example` to `.env` and fill in your keys:
 
 ```env
 OPENAI_API_KEY=sk-your-openai-key
@@ -75,82 +70,84 @@ OPENWEATHER_API_KEY=your-openweather-key
 AISSTREAM_API_KEY=your-aisstream-key
 ```
 
-### 3. Start Backend Server
+### 3. Bootstrap the Machine Learning Model
 
+To solve the "cold start" problem, ChainWatch uses a local ML model that must be trained before the first run. The repository includes a bootstrap script that safely generates ~200 realistic, highly-correlated historical data samples and trains the initial Random Forest and Ridge Regression models.
+
+```bash
+# Generate seed data and automatically train the initial ML model
+python -m backend.ml.seed_training_data
+```
+
+*(Note: As the system runs in production, it will continuously append real-world analysis runs to `backend/data/risk_history.jsonl` allowing the ML to learn and drift over time).*
+
+### 4. Start the Application
+
+**Backend Server:**
 ```bash
 # From project root
 uvicorn backend.main:app --reload --port 8000
 ```
-
 Backend will be available at `http://localhost:8000`
 
-### 4. Setup & Start Frontend
-
+**Frontend Dashboard:**
 ```bash
 # Open new terminal
 cd frontend-next
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
-
 Frontend will be available at `http://localhost:3000`
 
 ---
 
-## Architecture
+## Architecture Flow
+
+The system operates via an Orchestrator that flows data sequentially through deterministic APIs, ML correlation tools, and LLM text generation:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Next.js Dashboard                     │
-│         (Risk Dashboard + Live Port Monitor)            │
-└─────────────────────────┬───────────────────────────────┘
-                          │ HTTP/REST
-┌─────────────────────────▼───────────────────────────────┐
-│                    FastAPI Backend                       │
-│        /analyze/{region}  •  /port/vessels/{region}      │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────┐
-│                     Orchestrator                         │
-│            (Coordinates all agents sequentially)         │
-└───────┬─────────────────┼─────────────────┬─────────────┘
-        │                 │                 │
-        ▼                 ▼                 ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│  News Agent   │ │ Weather Agent │ │  Port Agent   │
-│   (LLM + API) │ │  (Rules + API)│ │ (Live AIS)    │
-└───────────────┘ └───────────────┘ └───────┬───────┘
-        │                 │                 │
-        └─────────────────┼─────────────────┘
-                          ▼
-              ┌───────────────────────┐
-              │  Aggregation Agent    │
-              │  (Weighted Formula)   │
-              └───────────┬───────────┘
-                          ▼
-              ┌───────────────────────┐
-              │  Explanation Agent    │
-              │  (LLM Summary)        │
-              └───────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                    Next.js Dashboard                   │
+│         (3D Globe + ML Feature Important Charts)       │
+└────────────────────────┬───────────────────────────────┘
+                         │ HTTP/REST
+┌────────────────────────▼───────────────────────────────┐
+│                    FastAPI Backend                     │
+└────────────────────────┬───────────────────────────────┘
+                         │
+┌────────────────────────▼───────────────────────────────┐
+│               1. Agent Orchestrator                    │
+│      (Coordinates data fetching mathematically)        │
+└──────┬─────────────────┼─────────────────┬─────────────┘
+       │                 │                 │
+       ▼                 ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  News Agent  │  │Weather Agent │  │  Port Agent  │
+│ (LLM + API)  │  │(Rules + API) │  │ (Live AIS)   │
+└──────────────┘  └──────────────┘  └──────┬───────┘
+       │                 │                 │
+       └─────────────────┼─────────────────┘
+                         ▼
+             ┌───────────────────────┐
+             │ 2. ML Correlation     │
+             │ (Scikit-Learn Forest) │
+             │   - Delay Predictor   │
+             │   - Feature Import.   │
+             └───────────┬───────────┘
+                         ▼
+             ┌───────────────────────┐
+             │ 3. Explanation Agent  │
+             │ (LLM interprets ML    │
+             │  outputs for humans)  │
+             └───────────────────────┘
 ```
 
-## Risk Calculation
+## Risk Calculation & ML Synergy
 
-Risk scores are calculated using transparent weighted aggregation:
+The final aggregate risk score generated by the system is a mathematically sound blend of deterministic domain knowledge and dynamic ML predictions:
 
-```
-Risk Score = 0.4 × News + 0.3 × Weather + 0.3 × Port
-```
-
-| Risk Level | Score Range | Color |
-|------------|-------------|-------|
-| Low | < 2.5 | Green |
-| Medium | 2.5 - 3.5 | Amber |
-| High | > 3.5 | Red |
+*   **Heuristic Baseline (70%):** A fixed formula measuring raw immediate severity (`0.4 × News + 0.3 × Weather + 0.3 × Port`).
+*   **Predictive ML Model (30%):** A Ridge Regression model dynamically analyzing the 10-dimensional feature vector to accurately weight correlated threats (e.g., recognizing a storm occurring simultaneously with a high vessel queue produces exponentially worse delays).
 
 ---
 
@@ -158,8 +155,8 @@ Risk Score = 0.4 × News + 0.3 × Weather + 0.3 × Port
 
 ### Live Port Monitor
 Navigate to **Port Monitor** in the header or `/port-monitor`.
-- **Scan Port**: Quick 30s scan of live vessel traffic in the area.
-- **Full Risk Overview**: Runs the full analysis pipeline (News + Weather + Port Risk) *plus* the live vessel scan concurrently.
+- **Scan Port**: Quick 8s scan of live vessel traffic in the area.
+- **Full Risk Overview**: Runs the full analysis pipeline (Heuristics + ML Prediction + LLM Explanation) *plus* the live vessel scan concurrently.
 
 ### API Reference
 
@@ -167,10 +164,11 @@ Navigate to **Port Monitor** in the header or `/port-monitor`.
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/regions` | List available regions |
-| POST | `/analyze/{region}` | Run standard risk analysis |
+| POST | `/analyze/{region}` | Run standard hybrid risk analysis |
 | GET | `/port/vessels/{region}` | Live AIS vessel scan |
-| GET | `/port/risk-overview/{region}` | Full supply chain risk + live AIS |
-| POST | `/chat` | Chat with AI about risks |
+| GET | `/risk-overview/{region}` | Full supply chain risk + live AIS |
+| POST | `/ml/retrain` | Force standard retraining of the ML models |
+| GET | `/ml/status` | Introspect ML Confidence and R2 accuracy |
 
 ---
 
@@ -183,20 +181,23 @@ chainWatch/
 │   ├── config.py            # Configuration & Regions
 │   ├── state.py             # In-memory state store
 │   ├── orchestrator/        # Agent coordination
+│   ├── ml/                  # Machine Learning Engine
+│   │   ├── correlation_model.py # Random Forest & Ridge Regression
+│   │   ├── seed_training_data.py # Synthetic Bootstrapper
 │   ├── agents/
 │   │   ├── news_agent.py    # News risk assessment
 │   │   ├── weather_agent.py # Weather risk assessment
 │   │   ├── port_agent.py    # Port congestion via AIS
-│   │   └── ...
+│   │   └── ml_agent.py      # ML execution
 │   ├── services/
 │   │   ├── ais_service.py   # AISStream.io client
-│   │   ├── news_api.py      # NewsAPI client
 │   │   └── ...
-│   └── models/              # Pydantic schemas
+│   └── data/
+│       └── risk_history.jsonl # Live training tape
 ├── frontend-next/
 │   ├── app/                 # Next.js app router
 │   ├── components/          # React components
-│   │   ├── VesselMap.tsx    # Leaflet map
+│   │   ├── RiskOverviewPanel.tsx # Dashboard Views
 │   │   └── ...
 │   └── lib/                 # API client
 └── ...
@@ -211,5 +212,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <p align="center">
-  <strong>ChainWatch</strong> - Built with Agentic AI • Next.js • FastAPI
+  <strong>ChainWatch</strong> - Built with Agentic AI • Machine Learning • Next.js • FastAPI
 </p>

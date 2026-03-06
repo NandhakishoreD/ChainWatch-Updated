@@ -96,7 +96,7 @@ export function RiskMeter({ risk, region, explanation }: RiskMeterProps) {
 
         {/* Breakdown */}
         <div className="grid grid-cols-3 gap-4 mb-6">
-          {Object.entries(risk.breakdown).map(([key, data]) => (
+          {Object.entries(risk.breakdown).filter(([key]) => key !== 'ml_comparison').map(([key, data]) => (
             <motion.div
               key={key}
               initial={{ opacity: 0, y: 10 }}

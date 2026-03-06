@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-import websockets
+import aiohttp
 from typing import Optional
 from backend.config import get_settings
 
@@ -52,19 +52,12 @@ class AISStreamService:
 
     async def sample_port_vessels(
         self, 
+        region: str,
         bounding_box: list[list[float]], 
         duration_seconds: int = 10
     ) -> dict:
         """
         Sample vessel data from a port area for a specified duration.
-        Captures both PositionReport and ShipStaticData for rich vessel info.
-
-        Args:
-            bounding_box: [[lat1, lon1], [lat2, lon2]] defining the area
-            duration_seconds: How long to sample data (default 10 seconds)
-
-        Returns:
-            dict with vessel_count, avg_speed, navigational_statuses, vessels list, etc.
         """
         if not self.settings.aisstream_api_key:
             raise ValueError("AIS Stream API key not configured")
@@ -72,122 +65,134 @@ class AISStreamService:
         vessels = {}
         navigational_statuses = []
         speeds = []
+        message_count = 0
 
-        try:
-            async with websockets.connect(self.ws_url) as websocket:
-                # Subscribe to the port area — include both PositionReport and ShipStaticData
-                subscribe_message = {
-                    "APIKey": self.settings.aisstream_api_key,
-                    "BoundingBoxes": [bounding_box],
-                    "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
-                }
-                
-                await websocket.send(json.dumps(subscribe_message))
-                
-                print(f"[AIS] Sampling {duration_seconds}s for bbox {bounding_box}")
+        max_retries = 3
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                vessels.clear()
+                navigational_statuses.clear()
+                speeds.clear()
                 message_count = 0
 
-                # Sample messages for the specified duration
-                try:
-                    async with asyncio.timeout(duration_seconds):
-                        async for message_json in websocket:
-                            message_count += 1
-                            message = json.loads(message_json)
-                            
-                            # Extract metadata (available on all message types)
-                            metadata = message.get("MetaData", {})
-                            vessel_mmsi = metadata.get("MMSI")
-                            
-                            # Debug: Log first few messages
-                            if message_count <= 3:
-                                print(f"[AIS] Message {message_count}: {message.get('MessageType', 'Unknown')} "
-                                      f"MMSI={vessel_mmsi} Ship={metadata.get('ShipName', 'N/A')}")
-                            
-                            msg_type = message.get("MessageType")
-                            
-                            if msg_type == "PositionReport":
-                                ais_msg = message.get("Message", {}).get("PositionReport", {})
-                                vessel_id = ais_msg.get("UserID")
-                                
-                                if vessel_id:
-                                    # Merge with existing data if we already have static info
-                                    existing = vessels.get(vessel_id, {})
-                                    
-                                    nav_status_code = ais_msg.get("NavigationalStatus", 15)
-                                    vessels[vessel_id] = {
-                                        **existing,
-                                        "mmsi": vessel_id,
-                                        "name": metadata.get("ShipName", existing.get("name", "Unknown")).strip().replace("@@", "").strip() or "Unknown",
-                                        "latitude": ais_msg.get("Latitude"),
-                                        "longitude": ais_msg.get("Longitude"),
-                                        "sog": round(ais_msg.get("Sog", 0), 1),
-                                        "cog": round(ais_msg.get("Cog", 0), 1),
-                                        "true_heading": ais_msg.get("TrueHeading", 0),
-                                        "nav_status": nav_status_code,
-                                        "nav_status_text": NAV_STATUS_MAP.get(nav_status_code, "Unknown"),
-                                        "rate_of_turn": ais_msg.get("RateOfTurn", 0),
-                                    }
-                                    
-                                    speed = ais_msg.get("Sog", 0)
-                                    if speed is not None:
-                                        speeds.append(speed)
-                                    
-                                    if nav_status_code is not None:
-                                        navigational_statuses.append(nav_status_code)
+                print(f"[AIS] Attempt {attempt + 1}/{max_retries} connecting to AISStream via aiohttp...")
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(self.ws_url, timeout=30.0) as websocket:
+                        subscribe_message = {
+                            "APIKey": self.settings.aisstream_api_key,
+                            "BoundingBoxes": [bounding_box],
+                            "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
+                        }
+                        
+                        await websocket.send_json(subscribe_message)
+                        
+                        print(f"[AIS] Connected! Sampling {duration_seconds}s for bbox {bounding_box}")
 
-                            elif msg_type == "ShipStaticData":
-                                static_msg = message.get("Message", {}).get("ShipStaticData", {})
-                                vessel_id = static_msg.get("UserID")
-                                
-                                if vessel_id:
-                                    existing = vessels.get(vessel_id, {})
-                                    ship_type_code = static_msg.get("Type", 0)
-                                    
-                                    raw_name = static_msg.get("Name", "Unknown")
-                                    clean_name = raw_name.strip().replace("@@", "").replace("@", "").strip() or "Unknown"
-                                    
-                                    raw_dest = static_msg.get("Destination", "")
-                                    clean_dest = raw_dest.strip().replace("@@", "").replace("@", "").strip() or "N/A"
-                                    
-                                    eta_data = static_msg.get("Eta", {})
-                                    eta_str = ""
-                                    if eta_data and eta_data.get("Month", 0) > 0:
-                                        eta_str = f"{eta_data.get('Month', 0):02d}-{eta_data.get('Day', 0):02d} {eta_data.get('Hour', 0):02d}:{eta_data.get('Minute', 0):02d}"
-                                    
-                                    dimension = static_msg.get("Dimension", {})
-                                    length = (dimension.get("A", 0) or 0) + (dimension.get("B", 0) or 0)
-                                    width = (dimension.get("C", 0) or 0) + (dimension.get("D", 0) or 0)
-                                    
-                                    vessels[vessel_id] = {
-                                        **existing,
-                                        "mmsi": vessel_id,
-                                        "name": clean_name,
-                                        "call_sign": static_msg.get("CallSign", "").strip() or "N/A",
-                                        "imo_number": static_msg.get("ImoNumber", 0),
-                                        "ship_type": ship_type_code,
-                                        "ship_type_text": get_ship_type_name(ship_type_code),
-                                        "destination": clean_dest,
-                                        "eta": eta_str,
-                                        "length": length,
-                                        "width": width,
-                                        "draught": static_msg.get("MaximumStaticDraught", 0),
-                                    }
+                        try:
+                            async with asyncio.timeout(duration_seconds):
+                                async for msg in websocket:
+                                    if msg.type in (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY):
+                                        message_count += 1
+                                        try:
+                                            # If it's bytes, decode it; if it's string, json.loads handles it natively
+                                            payload = msg.data.decode('utf-8') if isinstance(msg.data, bytes) else msg.data
+                                            message = json.loads(payload)
+                                        except Exception as e:
+                                            print(f"[AIS] Failed to parse message: {e}")
+                                            continue
+                                        
+                                        metadata = message.get("MetaData", {})
+                                        msg_type = message.get("MessageType")
+                                        
+                                        if msg_type == "PositionReport":
+                                            ais_msg = message.get("Message", {}).get("PositionReport", {})
+                                            vessel_id = ais_msg.get("UserID")
+                                            
+                                            if vessel_id:
+                                                existing = vessels.get(vessel_id, {})
+                                                nav_status_code = ais_msg.get("NavigationalStatus", 15)
+                                                vessels[vessel_id] = {
+                                                    **existing,
+                                                    "mmsi": vessel_id,
+                                                    "name": metadata.get("ShipName", existing.get("name", "Unknown")).strip().replace("@@", "").strip() or "Unknown",
+                                                    "latitude": ais_msg.get("Latitude"),
+                                                    "longitude": ais_msg.get("Longitude"),
+                                                    "sog": round(ais_msg.get("Sog", 0), 1),
+                                                    "cog": round(ais_msg.get("Cog", 0), 1),
+                                                    "true_heading": ais_msg.get("TrueHeading", 0),
+                                                    "nav_status": nav_status_code,
+                                                    "nav_status_text": NAV_STATUS_MAP.get(nav_status_code, "Unknown"),
+                                                    "rate_of_turn": ais_msg.get("RateOfTurn", 0),
+                                                }
+                                                
+                                                speed = ais_msg.get("Sog", 0)
+                                                if speed is not None:
+                                                    speeds.append(speed)
+                                                
+                                                if nav_status_code is not None:
+                                                    navigational_statuses.append(nav_status_code)
 
-                except asyncio.TimeoutError:
-                    print(f"[AIS] Timeout after {duration_seconds}s. "
-                          f"Received {message_count} messages, found {len(vessels)} unique vessels")
+                                        elif msg_type == "ShipStaticData":
+                                            static_msg = message.get("Message", {}).get("ShipStaticData", {})
+                                            vessel_id = static_msg.get("UserID")
+                                            
+                                            if vessel_id:
+                                                existing = vessels.get(vessel_id, {})
+                                                ship_type_code = static_msg.get("Type", 0)
+                                                
+                                                raw_name = static_msg.get("Name", "Unknown")
+                                                clean_name = raw_name.strip().replace("@@", "").replace("@", "").strip() or "Unknown"
+                                                
+                                                raw_dest = static_msg.get("Destination", "")
+                                                clean_dest = raw_dest.strip().replace("@@", "").replace("@", "").strip() or "N/A"
+                                                
+                                                eta_data = static_msg.get("Eta", {})
+                                                eta_str = ""
+                                                if eta_data and eta_data.get("Month", 0) > 0:
+                                                    eta_str = f"{eta_data.get('Month', 0):02d}-{eta_data.get('Day', 0):02d} {eta_data.get('Hour', 0):02d}:{eta_data.get('Minute', 0):02d}"
+                                                
+                                                dimension = static_msg.get("Dimension", {})
+                                                length = (dimension.get("A", 0) or 0) + (dimension.get("B", 0) or 0)
+                                                width = (dimension.get("C", 0) or 0) + (dimension.get("D", 0) or 0)
+                                                
+                                                vessels[vessel_id] = {
+                                                    **existing,
+                                                    "mmsi": vessel_id,
+                                                    "name": clean_name,
+                                                    "call_sign": static_msg.get("CallSign", "").strip() or "N/A",
+                                                    "imo_number": static_msg.get("ImoNumber", 0),
+                                                    "ship_type": ship_type_code,
+                                                    "ship_type_text": get_ship_type_name(ship_type_code),
+                                                    "destination": clean_dest,
+                                                    "eta": eta_str,
+                                                    "length": length,
+                                                    "width": width,
+                                                    "draught": static_msg.get("MaximumStaticDraught", 0),
+                                                }
 
-        except Exception as e:
-            print(f"AIS Stream error: {str(e)}")
-            return {
-                "vessel_count": 0,
-                "avg_speed": 0,
-                "stationary_count": 0,
-                "moving_count": 0,
-                "moored_count": 0,
-                "vessels": [],
-                "error": str(e)
-            }
+                        except asyncio.TimeoutError:
+                            print(f"[AIS] Sampling finished. Received {message_count} messages, found {len(vessels)} unique vessels.")
+                
+                # Successful connection and info retrieval
+                break
+
+            except Exception as e:
+                last_error = e
+                print(f"AIS Stream error on attempt {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+                else:
+                    return {
+                        "vessel_count": 0,
+                        "avg_speed": 0,
+                        "stationary_count": 0,
+                        "moving_count": 0,
+                        "moored_count": 0,
+                        "vessels": [],
+                        "error": str(last_error)
+                    }
 
         # Calculate metrics
         vessel_count = len(vessels)
@@ -217,19 +222,13 @@ class AISStreamService:
             "moving_count": moving_count,
             "moored_count": moored_count,
             "congestion_level": congestion,
-            "messages_received": message_count if 'message_count' in dir() else 0,
+            "messages_received": message_count,
             "vessels": list(vessels.values())
         }
 
     async def get_port_congestion(self, region: str) -> Optional[dict]:
         """
         Get port congestion data for a specific region.
-
-        Args:
-            region: Region name (Shanghai, Rotterdam, Los Angeles)
-
-        Returns:
-            Vessel metrics for the port area, or None if error
         """
         region_config = self.settings.regions.get(region)
         if not region_config or "bbox" not in region_config:
@@ -238,7 +237,7 @@ class AISStreamService:
         bounding_box = region_config["bbox"]
         
         try:
-            metrics = await self.sample_port_vessels(bounding_box, duration_seconds=30)
+            metrics = await self.sample_port_vessels(region, bounding_box, duration_seconds=30)
             return metrics
         except Exception as e:
             print(f"Error fetching port congestion for {region}: {str(e)}")

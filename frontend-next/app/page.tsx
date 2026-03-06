@@ -6,11 +6,10 @@ import { BackgroundEffects } from '@/components/BackgroundEffects';
 import { Header } from '@/components/Header';
 import { RegionSelector } from '@/components/RegionSelector';
 import { AnalyzeButton } from '@/components/AnalyzeButton';
-import { RiskMeter } from '@/components/RiskMeter';
-import { NewsRiskCard, WeatherRiskCard, PortRiskCard } from '@/components/RiskCard';
+import { RiskOverviewPanel } from '@/components/RiskOverviewPanel';
 import { ChatBot } from '@/components/ChatBot';
 import { EmptyState } from '@/components/EmptyState';
-import { SystemState, RiskLevel } from '@/lib/types';
+import { SystemState, RiskLevel, RiskOverviewData } from '@/lib/types';
 import { getRegions, analyzeRegion, getCurrentState } from '@/lib/api';
 import { AlertCircle } from 'lucide-react';
 
@@ -24,9 +23,7 @@ export default function Dashboard() {
   const riskLevel: RiskLevel | null = state?.aggregated_risk?.risk_level || null;
 
   useEffect(() => {
-    // Fetch regions on mount
     getRegions().then(setRegions);
-    // Check for existing state
     getCurrentState().then((s) => {
       if (s) setState(s);
     });
@@ -45,18 +42,61 @@ export default function Dashboard() {
     }
   };
 
+  // Map SystemState → RiskOverviewData expected by RiskOverviewPanel
+  const panelData: RiskOverviewData | null = state
+    ? {
+      region: state.region,
+      port_name: state.region,
+      center: { lat: 0, lon: 0 },
+      status: state.status,
+      risk_score: state.aggregated_risk?.risk_score ?? null,
+      risk_level: state.aggregated_risk?.risk_level ?? null,
+      risk_breakdown: state.aggregated_risk?.breakdown ?? {},
+      news_risk: state.news_risk
+        ? {
+          severity: state.news_risk.severity,
+          event_type: state.news_risk.event_type,
+          summary: state.news_risk.summary,
+          sources: state.news_risk.sources,
+        }
+        : null,
+      weather_risk: state.weather_risk
+        ? {
+          severity: state.weather_risk.severity,
+          condition: state.weather_risk.weather_condition,
+          details: state.weather_risk.details,
+          temperature_c: state.weather_risk.temperature_c,
+          wind_speed_kmh: state.weather_risk.wind_speed_kmh,
+        }
+        : null,
+      port_risk: state.port_risk
+        ? {
+          severity: state.port_risk.severity,
+          congestion_level: state.port_risk.congestion_level,
+          details: state.port_risk.details,
+          vessel_queue: state.port_risk.vessel_queue,
+          avg_delay_hours: state.port_risk.avg_delay_hours,
+        }
+        : null,
+      ml_analysis: state.ml_analysis ?? null,
+      explanation: state.explanation,
+      vessel_count: 0,
+      vessels: [],
+      bounding_box: [],
+      avg_speed: 0,
+      moving_count: 0,
+      stationary_count: 0,
+      moored_count: 0,
+      congestion_level: state.port_risk?.congestion_level ?? 'unknown',
+    }
+    : null;
+
   return (
-    <div
-      className="min-h-screen relative"
-      data-risk={riskLevel}
-    >
+    <div className="min-h-screen relative" data-risk={riskLevel}>
       <BackgroundEffects riskLevel={riskLevel} />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Header
-          riskLevel={riskLevel}
-          lastUpdated={state?.timestamp || null}
-        />
+        <Header riskLevel={riskLevel} lastUpdated={state?.timestamp || null} />
 
         {/* Controls */}
         <motion.div
@@ -71,13 +111,9 @@ export default function Dashboard() {
               onSelect={setSelectedRegion}
               disabled={loading}
             />
-            <AnalyzeButton
-              onClick={handleAnalyze}
-              loading={loading}
-            />
+            <AnalyzeButton onClick={handleAnalyze} loading={loading} />
           </div>
 
-          {/* Error message */}
           {error && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
@@ -91,44 +127,19 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Main content */}
-        {!state ? (
+        {!panelData ? (
           <EmptyState />
         ) : (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            key={state.timestamp}
+            key={state?.timestamp}
           >
-            {/* Risk Meter */}
-            <div className="mb-8">
-              <RiskMeter
-                risk={state.aggregated_risk}
-                region={state.region}
-                explanation={state.explanation}
-              />
-            </div>
-
-            {/* Risk Cards */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <h2 className="font-display text-lg font-bold tracking-wide text-white mb-4 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full" style={{ background: 'var(--risk-color)' }} />
-                RISK BREAKDOWN
-              </h2>
-              <div className="grid md:grid-cols-3 gap-6">
-                <NewsRiskCard data={state.news_risk} delay={0.5} />
-                <WeatherRiskCard data={state.weather_risk} delay={0.6} />
-                <PortRiskCard data={state.port_risk} delay={0.7} />
-              </div>
-            </motion.div>
+            <RiskOverviewPanel data={panelData} />
           </motion.div>
         )}
       </div>
 
-      {/* Chat Bot */}
       <ChatBot />
     </div>
   );

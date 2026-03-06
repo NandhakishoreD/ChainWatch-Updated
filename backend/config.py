@@ -14,12 +14,6 @@ class Settings(BaseSettings):
     # Regions with coordinates and port bounding boxes for AIS tracking
     regions: dict = {
         # === Major Congested Ports ===
-        "Shanghai": {
-            "lat": 31.2304,
-            "lon": 121.4737,
-            "port": "Shanghai Port",
-            "bbox": [[30.9, 121.2], [31.5, 122.0]],
-        },
         "Rotterdam": {
             "lat": 51.9225,
             "lon": 4.4792,
@@ -32,23 +26,17 @@ class Settings(BaseSettings):
             "port": "Port of Los Angeles",
             "bbox": [[33.5, -118.5], [33.9, -118.0]],
         },
+        "Long Beach": {
+            "lat": 33.754185,
+            "lon": -118.216458,
+            "port": "Port of Long Beach",
+            "bbox": [[33.7, -118.3], [33.8, -118.1]],
+        },
         "Singapore": {
             "lat": 1.2644,
             "lon": 103.8198,
             "port": "Port of Singapore",
             "bbox": [[1.05, 103.6], [1.45, 104.1]],
-        },
-        "Busan": {
-            "lat": 35.0951,
-            "lon": 129.0367,
-            "port": "Port of Busan",
-            "bbox": [[34.9, 128.8], [35.3, 129.3]],
-        },
-        "Dubai": {
-            "lat": 25.2697,
-            "lon": 55.3094,
-            "port": "Jebel Ali Port",
-            "bbox": [[24.9, 55.0], [25.4, 55.5]],
         },
         "Hamburg": {
             "lat": 53.5461,
@@ -86,11 +74,31 @@ class Settings(BaseSettings):
             "port": "Port of New York & New Jersey",
             "bbox": [[40.4, -74.3], [40.8, -73.7]],
         },
-        "Colombo": {
-            "lat": 6.9497,
-            "lon": 79.8428,
-            "port": "Colombo Port",
-            "bbox": [[6.7, 79.6], [7.1, 80.0]],
+        # === US Ports Coverage ===
+        "Savannah": {
+            "lat": 32.0809,
+            "lon": -81.0912,
+            "port": "Port of Savannah",
+            "bbox": [[32.0, -81.2], [32.2, -80.9]],
+        },
+        "Seattle": {
+            "lat": 47.6062,
+            "lon": -122.3321,
+            "port": "Port of Seattle",
+            "bbox": [[47.5, -122.4], [47.7, -122.3]],
+        },
+        # === European / Mediterranean Coverage ===
+        "Southampton": {
+            "lat": 50.8998,
+            "lon": -1.4043,
+            "port": "Port of Southampton",
+            "bbox": [[50.7, -1.6], [50.9, -1.3]],
+        },
+        "Valencia": {
+            "lat": 39.4699,
+            "lon": -0.3763,
+            "port": "Port of Valencia",
+            "bbox": [[39.4, -0.4], [39.5, -0.2]],
         },
         "Piraeus": {
             "lat": 37.9475,
@@ -98,37 +106,18 @@ class Settings(BaseSettings):
             "port": "Port of Piraeus",
             "bbox": [[37.7, 23.4], [38.1, 23.8]],
         },
-        # === Low Congestion / Efficient Ports ===
-        "Tanjung Pelepas": {
-            "lat": 1.3667,
-            "lon": 103.5500,
-            "port": "Port of Tanjung Pelepas",
-            "bbox": [[1.2, 103.4], [1.5, 103.7]],
+        # === Canada / Middle East Coverage ===
+        "Vancouver": {
+            "lat": 49.2827,
+            "lon": -123.1207,
+            "port": "Port of Vancouver",
+            "bbox": [[49.2, -123.2], [49.4, -123.0]],
         },
         "Salalah": {
             "lat": 16.9500,
             "lon": 54.0000,
             "port": "Port of Salalah",
             "bbox": [[16.7, 53.8], [17.2, 54.2]],
-        },
-        # === Indian Ports (Tamil Nadu & Kerala) ===
-        "Chennai": {
-            "lat": 13.0827,
-            "lon": 80.2707,
-            "port": "Chennai Port (Madras)",
-            "bbox": [[12.9, 80.1], [13.3, 80.5]],
-        },
-        "Tuticorin": {
-            "lat": 8.7642,
-            "lon": 78.1348,
-            "port": "V.O. Chidambaranar Port (Tuticorin)",
-            "bbox": [[8.5, 77.9], [9.0, 78.4]],
-        },
-        "Cochin": {
-            "lat": 9.9312,
-            "lon": 76.2673,
-            "port": "Cochin Port (Kochi)",
-            "bbox": [[9.7, 76.0], [10.1, 76.5]],
         },
     }
 

@@ -48,6 +48,20 @@ class AggregatedRisk(BaseModel):
     )
 
 
+class MLAnalysisOutput(BaseModel):
+    """Output schema for the ML Correlation Agent."""
+
+    ml_risk_score: float = Field(description="ML-predicted risk score (1.0-5.0)")
+    ml_delay_hours: float = Field(description="ML-predicted delay in hours")
+    ml_risk_level: str = Field(description="ML-predicted risk level")
+    top_correlations: list = Field(default_factory=list, description="Top cross-factor correlations")
+    feature_importances: dict = Field(default_factory=dict, description="Feature importance percentages")
+    confidence: float = Field(default=0.0, description="Model confidence (0-1)")
+    training_samples: int = Field(default=0, description="Number of training samples used")
+    model_r2_risk: float = Field(default=0.0, description="Risk model R² score")
+    model_r2_delay: float = Field(default=0.0, description="Delay model R² score")
+
+
 class SystemState(BaseModel):
     """Complete system state containing all agent outputs."""
 
@@ -56,6 +70,7 @@ class SystemState(BaseModel):
     news_risk: Optional[NewsRiskOutput] = None
     weather_risk: Optional[WeatherRiskOutput] = None
     port_risk: Optional[PortRiskOutput] = None
+    ml_analysis: Optional[MLAnalysisOutput] = None
     aggregated_risk: Optional[AggregatedRisk] = None
     explanation: Optional[str] = None
     status: Literal["pending", "processing", "completed", "error"] = "pending"

@@ -2,11 +2,13 @@ from datetime import datetime
 from backend.agents.news_agent import NewsAgent
 from backend.agents.weather_agent import WeatherAgent
 from backend.agents.port_agent import PortAgent
+from backend.agents.ml_agent import MLCorrelationAgent
 from backend.agents.aggregation_agent import AggregationAgent
 from backend.agents.explanation_agent import ExplanationAgent
-from backend.models.schemas import SystemState
+from backend.models.schemas import SystemState, MLAnalysisOutput
 from backend.state import state_store
 from backend.config import get_settings
+from backend.services.data_logger import log_analysis_run
 
 
 class Orchestrator:
@@ -17,6 +19,7 @@ class Orchestrator:
         self.news_agent = NewsAgent()
         self.weather_agent = WeatherAgent()
         self.port_agent = PortAgent()
+        self.ml_agent = MLCorrelationAgent()
         self.aggregation_agent = AggregationAgent()
         self.explanation_agent = ExplanationAgent()
 
@@ -32,8 +35,9 @@ class Orchestrator:
         1. News Risk Agent
         2. Weather Risk Agent
         3. Port Risk Agent
-        4. Risk Aggregation Agent
-        5. Explanation Agent
+        4. ML Correlation Agent (cross-factor analysis)
+        5. Risk Aggregation Agent
+        6. Explanation Agent (LLM with ML insights)
 
         Args:
             region: Region to analyze (e.g., "Shanghai")
@@ -68,27 +72,48 @@ class Orchestrator:
             port_result = await self.port_agent.run(region)
             state.port_risk = port_result
 
-            # Step 4: Risk Aggregation Agent
+            # Step 4: ML Correlation Agent
+            ml_result = await self.ml_agent.run(
+                region=region,
+                news_risk=news_result,
+                weather_risk=weather_result,
+                port_risk=port_result,
+            )
+            if ml_result:
+                state.ml_analysis = MLAnalysisOutput(**ml_result)
+
+            # Step 5: Risk Aggregation Agent
             aggregation_result = await self.aggregation_agent.run(
                 region=region,
                 news_severity=news_result.severity,
                 weather_severity=weather_result.severity,
                 port_severity=port_result.severity,
+                ml_risk_score=ml_result.get("ml_risk_score") if ml_result else None,
             )
             state.aggregated_risk = aggregation_result
 
-            # Step 5: Explanation Agent
+            # Step 6: Explanation Agent (now with ML insights)
             explanation = await self.explanation_agent.run(
                 region=region,
                 news_risk=news_result,
                 weather_risk=weather_result,
                 port_risk=port_result,
                 aggregated_risk=aggregation_result,
+                ml_analysis=ml_result,
             )
             state.explanation = explanation
 
             # Mark as completed
             state.status = "completed"
+
+            # Log this real analysis run for ML training data
+            log_analysis_run(
+                region=region,
+                news_risk=news_result,
+                weather_risk=weather_result,
+                port_risk=port_result,
+                aggregated_risk=aggregation_result,
+            )
 
         except Exception as e:
             state.status = "error"
@@ -102,3 +127,4 @@ class Orchestrator:
     def get_available_regions(self) -> list[str]:
         """Get list of available regions for analysis."""
         return list(self.settings.regions.keys())
+
