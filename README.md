@@ -16,19 +16,19 @@ ChainWatch is an advanced predictive supply chain monitoring system that utilize
 
 - **Hybrid AI/ML Architecture** - Fuses multi-agent deterministic heuristics with predictive Machine Learning regression forests.
 - **Data-Driven Delay Prediction** - Random Forest model predicts exact disruption delays (in hours) based on cross-factor correlations.
-- **Live Port Monitor** - Real-time vessel congestion tracking using raw AIS binary streams via AISStream.io.
+- **Live Port Monitor** - Real-time vessel congestion tracking over robust `aiohttp` websockets using raw AIS binary data streams via AISStream.io.
 - **Autonomous Orchestration** - Agents automatically fetch, process, and score news severity, weather conditions, and port activity.
 - **AI-Powered Explanations** - `gpt-4o-mini` interprets the ML data and heuristic logic to generate polished, statistically-grounded business reports.
 - **Interactive Dashboard** - Sleek, Next.js frontend featuring ambient risk theming, a 3D interactive globe, and transparent ML feature importance visualization.
 
-## Supported Regions (19 Ports)
+## Supported Regions (17 Ports with Live AIS Coverage)
 
 | Category | Ports |
 |----------|-------|
-| **Major Congested** | Shanghai, Rotterdam, Los Angeles, Singapore, Busan, Dubai, Hamburg, Antwerp, Hong Kong, Shenzhen, Tokyo, New York |
-| **Medium Traffic** | Colombo, Piraeus |
-| **Low Congestion** | Tanjung Pelepas, Salalah |
-| **🇮🇳 Indian Ports** | Chennai, Tuticorin, Cochin |
+| **US Coverage** | Los Angeles, Long Beach, New York, Savannah, Seattle |
+| **Europe & Med** | Rotterdam, Hamburg, Antwerp, Southampton, Valencia, Piraeus |
+| **Asia & Mid East** | Singapore, Hong Kong, Shenzhen, Tokyo, Salalah |
+| **Canada** | Vancouver |
 
 ---
 
@@ -166,7 +166,7 @@ Navigate to **Port Monitor** in the header or `/port-monitor`.
 | GET | `/regions` | List available regions |
 | POST | `/analyze/{region}` | Run standard hybrid risk analysis |
 | GET | `/port/vessels/{region}` | Live AIS vessel scan |
-| GET | `/risk-overview/{region}` | Full supply chain risk + live AIS |
+| GET | `/port/risk-overview/{region}` | Full supply chain risk + live AIS |
 | POST | `/ml/retrain` | Force standard retraining of the ML models |
 | GET | `/ml/status` | Introspect ML Confidence and R2 accuracy |
 
