@@ -60,14 +60,22 @@ class AISStreamService:
         Sample vessel data from a port area for a specified duration.
         """
         if not self.settings.aisstream_api_key:
-            raise ValueError("AIS Stream API key not configured")
+            return {
+                "vessel_count": 0,
+                "avg_speed": 0,
+                "stationary_count": 0,
+                "moving_count": 0,
+                "moored_count": 0,
+                "vessels": [],
+                "error": "AIS Stream API key not configured"
+            }
 
         vessels = {}
         navigational_statuses = []
         speeds = []
         message_count = 0
 
-        max_retries = 3
+        max_retries = 2
         last_error = None
 
         for attempt in range(max_retries):
@@ -79,7 +87,7 @@ class AISStreamService:
 
                 print(f"[AIS] Attempt {attempt + 1}/{max_retries} connecting to AISStream via aiohttp...")
                 async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(self.ws_url, timeout=30.0) as websocket:
+                    async with session.ws_connect(self.ws_url, timeout=aiohttp.ClientTimeout(total=10, connect=8)) as websocket:
                         subscribe_message = {
                             "APIKey": self.settings.aisstream_api_key,
                             "BoundingBoxes": [bounding_box],
