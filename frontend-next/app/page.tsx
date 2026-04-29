@@ -14,7 +14,12 @@ import { getRegions, analyzeRegion, getCurrentState } from '@/lib/api';
 import { AlertCircle } from 'lucide-react';
 
 export default function Dashboard() {
-  const [regions, setRegions] = useState<string[]>(['Shanghai', 'Rotterdam', 'Los Angeles']);
+  const [regions, setRegions] = useState<string[]>([
+    'Antwerp', 'Busan', 'Hamburg', 'Hong Kong', 'Long Beach',
+    'Los Angeles', 'New York', 'Ningbo', 'Piraeus', 'Rotterdam',
+    'Salalah', 'Savannah', 'Seattle', 'Shanghai', 'Shenzhen',
+    'Singapore', 'Southampton', 'Tokyo', 'Valencia', 'Vancouver',
+  ]);
   const [selectedRegion, setSelectedRegion] = useState('Shanghai');
   const [state, setState] = useState<SystemState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +28,7 @@ export default function Dashboard() {
   const riskLevel: RiskLevel | null = state?.aggregated_risk?.risk_level || null;
 
   useEffect(() => {
-    getRegions().then(setRegions);
+    getRegions().then(r => setRegions([...r].sort())).catch(() => {});
     getCurrentState().then((s) => {
       if (s) setState(s);
     });

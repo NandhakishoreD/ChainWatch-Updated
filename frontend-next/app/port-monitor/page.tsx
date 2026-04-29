@@ -36,7 +36,12 @@ const VesselMap = dynamic(
 );
 
 export default function PortMonitorPage() {
-    const [regions, setRegions] = useState<string[]>(['Shanghai', 'Rotterdam', 'Los Angeles']);
+    const [regions, setRegions] = useState<string[]>([
+        'Antwerp', 'Busan', 'Hamburg', 'Hong Kong', 'Long Beach',
+        'Los Angeles', 'New York', 'Ningbo', 'Piraeus', 'Rotterdam',
+        'Salalah', 'Savannah', 'Seattle', 'Shanghai', 'Shenzhen',
+        'Singapore', 'Southampton', 'Tokyo', 'Valencia', 'Vancouver',
+    ]);
     const [selectedRegion, setSelectedRegion] = useState('Rotterdam');
     const [data, setData] = useState<PortMonitorData | null>(null);
     const [riskOverview, setRiskOverview] = useState<RiskOverviewData | null>(null);
@@ -46,7 +51,7 @@ export default function PortMonitorPage() {
     const [lastFetched, setLastFetched] = useState<string | null>(null);
 
     useEffect(() => {
-        getRegions().then(setRegions).catch(() => { });
+        getRegions().then(r => setRegions([...r].sort())).catch(() => { });
     }, []);
 
     const fetchVessels = useCallback(async () => {
