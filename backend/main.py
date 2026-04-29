@@ -143,110 +143,8 @@ async def chat(request: ChatRequest):
 # ============ Port Monitor Endpoints ============
 
 from backend.services.ais_service import AISStreamService
-import random
-import math
 
 ais_service = AISStreamService()
-
-# Realistic vessel name prefixes and suffixes for synthetic data
-_VESSEL_PREFIXES = [
-    "EVER", "MSC", "COSCO", "OOCL", "MAERSK", "CMA CGM", "HAPAG", "ONE",
-    "YANG MING", "ZIM", "PIL", "EVERGREEN", "HYUNDAI", "PACIFIC", "ATLANTIC",
-    "NORDIC", "EURO", "ASIAN", "GLOBAL", "TRANS",
-]
-_VESSEL_SUFFIXES = [
-    "STAR", "PIONEER", "EXPRESS", "FORTUNE", "GLORY", "SPIRIT", "EAGLE",
-    "LEADER", "CHAMPION", "TRADER", "CARRIER", "VENTURE", "HORIZON", "BRIDGE",
-    "NAVIGATOR", "VOYAGER", "DISCOVERY", "ZENITH", "APEX",
-]
-_SHIP_TYPES = [
-    (70, "Cargo"), (70, "Cargo"), (70, "Cargo"),   # 3× more cargo ships
-    (80, "Tanker"), (80, "Tanker"),
-    (60, "Passenger"),
-    (50, "Special Craft"),
-    (30, "Fishing/Tug/Special"),
-]
-_DESTINATIONS = [
-    "ROTTERDAM", "HAMBURG", "ANTWERP", "FELIXSTOWE", "LE HAVRE",
-    "SHANGHAI", "SINGAPORE", "HONG KONG", "BUSAN", "TOKYO",
-    "LOS ANGELES", "NEW YORK", "SAVANNAH", "VANCOUVER",
-]
-
-
-def _generate_synthetic_vessels(bbox: list, vessel_count: int, stationary_count: int, avg_speed: float) -> list:
-    """
-    Generate realistic synthetic vessel positions within a port bounding box.
-    Used when live AIS data is unavailable. Positions, names, and statuses
-    are procedurally generated but realistic for port traffic conditions.
-    """
-    lat_min, lon_min = bbox[0]
-    lat_max, lon_max = bbox[1]
-
-    # Use a fixed seed based on bbox so positions are stable between requests
-    seed = int(abs(lat_min * 1000 + lon_min * 100))
-    rng = random.Random(seed)
-
-    vessels = []
-    moored_count = max(1, vessel_count - stationary_count - max(1, vessel_count // 3))
-    moving_count = vessel_count - stationary_count - moored_count
-
-    for i in range(vessel_count):
-        # Assign navigational status
-        if i < moored_count:
-            nav_status = 5   # Moored — cluster near port edges
-            speed = 0.0
-            # Place near the bbox edges (berths)
-            lat = rng.choice([
-                lat_min + (lat_max - lat_min) * rng.uniform(0.05, 0.15),
-                lat_max - (lat_max - lat_min) * rng.uniform(0.05, 0.15),
-            ])
-            lon = rng.choice([
-                lon_min + (lon_max - lon_min) * rng.uniform(0.05, 0.15),
-                lon_max - (lon_max - lon_min) * rng.uniform(0.05, 0.15),
-            ])
-        elif i < moored_count + stationary_count:
-            nav_status = 1   # At Anchor — scatter in mid-water
-            speed = round(rng.uniform(0.0, 0.3), 1)
-            lat = rng.uniform(lat_min + 0.05, lat_max - 0.05)
-            lon = rng.uniform(lon_min + 0.05, lon_max - 0.05)
-        else:
-            nav_status = 0   # Under Way — spread throughout
-            speed = round(rng.uniform(avg_speed * 0.5, avg_speed * 1.5), 1)
-            lat = rng.uniform(lat_min + 0.02, lat_max - 0.02)
-            lon = rng.uniform(lon_min + 0.02, lon_max - 0.02)
-
-        cog = round(rng.uniform(0, 360), 1)
-        ship_type_code, ship_type_text = rng.choice(_SHIP_TYPES)
-        name = f"{rng.choice(_VESSEL_PREFIXES)} {rng.choice(_VESSEL_SUFFIXES)}"
-        # Give moored ships a numeric suffix for realism
-        if nav_status == 5:
-            name = f"{name} {rng.randint(1, 999):03d}"
-
-        mmsi_base = int(abs(lat_min * 10000 + lon_min * 1000)) + i
-        vessels.append({
-            "mmsi":           200000000 + mmsi_base,
-            "name":           name,
-            "latitude":       round(lat, 6),
-            "longitude":      round(lon, 6),
-            "sog":            speed,
-            "cog":            cog,
-            "true_heading":   int(cog),
-            "nav_status":     nav_status,
-            "nav_status_text": {
-                0: "Under Way", 1: "At Anchor", 5: "Moored"
-            }.get(nav_status, "Unknown"),
-            "rate_of_turn":   0,
-            "ship_type":      ship_type_code,
-            "ship_type_text": ship_type_text,
-            "destination":    rng.choice(_DESTINATIONS),
-            "call_sign":      f"{''.join(rng.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=2))}{rng.randint(1000,9999)}",
-            "imo_number":     rng.randint(7000000, 9999999),
-            "length":         rng.randint(100, 400),
-            "width":          rng.randint(20, 60),
-            "draught":        round(rng.uniform(5.0, 14.5), 1),
-        })
-
-    return vessels
 
 
 @app.get("/port/vessels/{region}")
@@ -271,36 +169,8 @@ async def get_port_vessels(region: str):
         port_data = await ais_service.sample_port_vessels(
             region=region,
             bounding_box=region_config["bbox"],
-            duration_seconds=8  # Quick scan
+            duration_seconds=20
         )
-        # If live scan returned no vessels, use synthetic baseline vessels
-        if port_data.get("vessel_count", 0) == 0 or port_data.get("error"):
-            from backend.agents.port_agent import PortAgent
-            pa = PortAgent()
-            BASELINE = {
-                "Shanghai": {"vessel_count": 45, "stationary_count": 12, "avg_speed": 4.2},
-                "Rotterdam": {"vessel_count": 38, "stationary_count": 8, "avg_speed": 3.8},
-                "Los Angeles": {"vessel_count": 30, "stationary_count": 10, "avg_speed": 3.1},
-                "Singapore": {"vessel_count": 55, "stationary_count": 14, "avg_speed": 4.5},
-                "Hamburg": {"vessel_count": 28, "stationary_count": 7, "avg_speed": 3.5},
-                "Shenzhen": {"vessel_count": 40, "stationary_count": 10, "avg_speed": 4.0},
-                "Ningbo": {"vessel_count": 42, "stationary_count": 11, "avg_speed": 4.1},
-                "Busan": {"vessel_count": 35, "stationary_count": 9, "avg_speed": 3.9},
-                "Hong Kong": {"vessel_count": 48, "stationary_count": 13, "avg_speed": 4.3},
-                "Antwerp": {"vessel_count": 32, "stationary_count": 8, "avg_speed": 3.6},
-                "Long Beach": {"vessel_count": 28, "stationary_count": 9, "avg_speed": 3.0},
-                "New York": {"vessel_count": 25, "stationary_count": 6, "avg_speed": 3.3},
-                "Tokyo": {"vessel_count": 33, "stationary_count": 8, "avg_speed": 3.7},
-            }
-            est = BASELINE.get(region, {"vessel_count": 20, "stationary_count": 5, "avg_speed": 3.5})
-            synthetic = _generate_synthetic_vessels(
-                bbox, est["vessel_count"], est["stationary_count"], est["avg_speed"]
-            )
-            port_data["vessels"] = synthetic
-            port_data["vessel_count"] = len(synthetic)
-            port_data["avg_speed"] = est["avg_speed"]
-            port_data["stationary_count"] = est["stationary_count"]
-            port_data["moving_count"] = est["vessel_count"] - est["stationary_count"]
         return port_data
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))

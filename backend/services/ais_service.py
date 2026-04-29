@@ -86,8 +86,9 @@ class AISStreamService:
                 message_count = 0
 
                 print(f"[AIS] Attempt {attempt + 1}/{max_retries} connecting to AISStream via aiohttp...")
-                async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(self.ws_url, timeout=aiohttp.ClientTimeout(total=10, connect=8)) as websocket:
+                conn_timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_connect=10)
+                async with aiohttp.ClientSession(timeout=conn_timeout) as session:
+                    async with session.ws_connect(self.ws_url, heartbeat=30.0) as websocket:
                         subscribe_message = {
                             "APIKey": self.settings.aisstream_api_key,
                             "BoundingBoxes": [bounding_box],
