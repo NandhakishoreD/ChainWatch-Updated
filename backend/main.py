@@ -169,7 +169,7 @@ async def get_port_vessels(region: str):
         port_data = await ais_service.sample_port_vessels(
             region=region,
             bounding_box=region_config["bbox"],
-            duration_seconds=20
+            duration_seconds=45
         )
         return port_data
     except ValueError as e:

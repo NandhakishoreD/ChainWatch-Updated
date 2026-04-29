@@ -58,6 +58,11 @@ export default function PortMonitorPage() {
         setLoading(true);
         setError(null);
         try {
+            // Wake up Render backend first (free tier sleeps after inactivity)
+            const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+            await fetch(`${apiBase}/health`).catch(() => {});
+            // Small delay to allow backend to fully initialise
+            await new Promise(r => setTimeout(r, 3000));
             const result = await getPortVessels(selectedRegion);
             setData(result);
             setRiskOverview(null);
@@ -73,6 +78,10 @@ export default function PortMonitorPage() {
         setLoadingRisk(true);
         setError(null);
         try {
+            // Wake up Render backend first (free tier sleeps after inactivity)
+            const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+            await fetch(`${apiBase}/health`).catch(() => {});
+            await new Promise(r => setTimeout(r, 3000));
             const result = await getPortRiskOverview(selectedRegion);
             setRiskOverview(result);
             // Also populate vessel data from the overview for map/table
