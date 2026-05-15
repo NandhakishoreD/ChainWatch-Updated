@@ -81,6 +81,10 @@ export default function Dashboard() {
           details: state.port_risk.details,
           vessel_queue: state.port_risk.vessel_queue,
           avg_delay_hours: state.port_risk.avg_delay_hours,
+          avg_speed: state.port_risk.avg_speed ?? null,
+          stationary_count: state.port_risk.stationary_count ?? null,
+          moored_count: state.port_risk.moored_count ?? null,
+          data_source: state.port_risk.data_source ?? 'baseline_estimate',
         }
         : null,
       ml_analysis: state.ml_analysis ?? null,

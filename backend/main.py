@@ -301,14 +301,7 @@ async def get_port_risk_overview(region: str):
             response["weather_risk"] = None
 
         if analysis_result.port_risk:
-            pr = analysis_result.port_risk
-            response["port_risk"] = {
-                "severity": pr.severity,
-                "congestion_level": pr.congestion_level,
-                "details": pr.details,
-                "vessel_queue": pr.vessel_queue,
-                "avg_delay_hours": pr.avg_delay_hours,
-            }
+            response["port_risk"] = analysis_result.port_risk.model_dump()
         else:
             response["port_risk"] = None
 
@@ -317,18 +310,7 @@ async def get_port_risk_overview(region: str):
 
         # ML correlation analysis results
         if analysis_result.ml_analysis:
-            ml = analysis_result.ml_analysis
-            response["ml_analysis"] = {
-                "ml_risk_score": ml.ml_risk_score,
-                "ml_delay_hours": ml.ml_delay_hours,
-                "ml_risk_level": ml.ml_risk_level,
-                "top_correlations": ml.top_correlations,
-                "feature_importances": ml.feature_importances,
-                "confidence": ml.confidence,
-                "training_samples": ml.training_samples,
-                "model_r2_risk": ml.model_r2_risk,
-                "model_r2_delay": ml.model_r2_delay,
-            }
+            response["ml_analysis"] = analysis_result.ml_analysis.model_dump()
         else:
             response["ml_analysis"] = None
 

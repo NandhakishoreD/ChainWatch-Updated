@@ -138,8 +138,16 @@ class CorrelationModel:
         # Prepare features
         X = df[FEATURE_COLUMNS].values
 
-        # Target: risk score
-        y_risk = df["heuristic_risk_score"].values if "heuristic_risk_score" in df.columns else np.ones(len(df))
+        # Target: empirical risk score (blend of heuristic and actual delay severity)
+        heuristic = df["heuristic_risk_score"].values if "heuristic_risk_score" in df.columns else np.ones(len(df))
+        delay = df["avg_delay_hours"].values if "avg_delay_hours" in df.columns else np.zeros(len(df))
+        
+        # Convert delay hours to a 1-5 severity scale (e.g., 0h = 1, 200h+ = 5)
+        delay_severity = 1.0 + (delay / 50.0)
+        delay_severity = np.clip(delay_severity, 1.0, 5.0)
+        
+        # Ground truth risk target learns from actual delays, preventing R2 data leakage
+        y_risk = 0.5 * heuristic + 0.5 * delay_severity
         y_risk = np.clip(y_risk, 1.0, 5.0)
 
         # Target: delay hours
@@ -242,8 +250,13 @@ class CorrelationModel:
         # Get top correlations with risk_score
         top_correlations = self._get_top_correlations()
 
-        # Confidence based on training data size
-        confidence = min(1.0, self.training_samples / 200)
+        # Confidence is a blend of data quantity and model quality.
+        # Data side: 300+ samples → max 70% contribution (never 100% from data alone).
+        # Model side: R² score contributes the remaining 30%.
+        # Hard cap at 85% — real-world uncertainty means we never claim full confidence.
+        data_confidence = min(0.70, self.training_samples / 300) * 0.70
+        model_confidence = max(0.0, self.cv_risk_score) * 0.30
+        confidence = round(min(0.85, data_confidence + model_confidence), 2)
 
         return {
             "ml_risk_score": risk_score,

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 from datetime import datetime
 
 
@@ -35,6 +35,15 @@ class PortRiskOutput(BaseModel):
     details: str = Field(description="Details about port congestion and delays")
     vessel_queue: Optional[int] = Field(default=None, description="Number of vessels waiting")
     avg_delay_hours: Optional[float] = Field(default=None, description="Average delay in hours")
+    # Real AIS vessel metrics — populated only when live AIS data is available
+    avg_speed: Optional[float] = Field(default=None, description="Average vessel speed in knots")
+    stationary_count: Optional[int] = Field(default=None, description="Number of stationary vessels")
+    moored_count: Optional[int] = Field(default=None, description="Number of moored vessels")
+    # Indicates whether data came from live AIS or a static fallback estimate
+    data_source: Literal["ais_live", "baseline_estimate"] = Field(
+        default="baseline_estimate",
+        description="Source of port data: live AIS stream or static fallback",
+    )
 
 
 class AggregatedRisk(BaseModel):
@@ -62,6 +71,14 @@ class MLAnalysisOutput(BaseModel):
     model_r2_delay: float = Field(default=0.0, description="Delay model R² score")
 
 
+class ColdStartMLOutput(BaseModel):
+    """Output schema when the ML model has not collected enough real data."""
+
+    status: Literal["insufficient_data"] = Field(description="Status indicating insufficient data")
+    real_records_collected: int = Field(description="Number of real records collected so far")
+    required: int = Field(description="Number of real records required to train the model")
+
+
 class SystemState(BaseModel):
     """Complete system state containing all agent outputs."""
 
@@ -70,7 +87,7 @@ class SystemState(BaseModel):
     news_risk: Optional[NewsRiskOutput] = None
     weather_risk: Optional[WeatherRiskOutput] = None
     port_risk: Optional[PortRiskOutput] = None
-    ml_analysis: Optional[MLAnalysisOutput] = None
+    ml_analysis: Optional[Union[MLAnalysisOutput, ColdStartMLOutput]] = None
     aggregated_risk: Optional[AggregatedRisk] = None
     explanation: Optional[str] = None
     status: Literal["pending", "processing", "completed", "error"] = "pending"

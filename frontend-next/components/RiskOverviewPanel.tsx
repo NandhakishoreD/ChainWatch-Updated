@@ -16,7 +16,15 @@ import {
     GitCompare,
     Activity,
 } from 'lucide-react';
-import { RiskOverviewData, MLCorrelationItem } from '@/lib/types';
+import { RiskOverviewData, MLCorrelationItem, ColdStartML, MLAnalysis } from '@/lib/types';
+
+// Type guard to check if ml_analysis is a cold-start placeholder
+function isColdStart(ml: MLAnalysis | ColdStartML | null): ml is ColdStartML {
+    return ml !== null && 'status' in ml && ml.status === 'insufficient_data';
+}
+function isMLAnalysis(ml: MLAnalysis | ColdStartML | null): ml is MLAnalysis {
+    return ml !== null && 'ml_risk_score' in ml;
+}
 
 interface RiskOverviewPanelProps {
     data: RiskOverviewData;
@@ -82,7 +90,8 @@ function FeatureBar({ name, value, max }: { name: string; value: number; max: nu
 export function RiskOverviewPanel({ data }: RiskOverviewPanelProps) {
     const riskColor = getRiskColor(data.risk_level);
     const riskScore = data.risk_score ?? 0;
-    const ml = data.ml_analysis;
+    const ml = isMLAnalysis(data.ml_analysis) ? data.ml_analysis : null;
+    const coldStart = isColdStart(data.ml_analysis) ? data.ml_analysis : null;
 
     return (
         <motion.div
@@ -308,10 +317,25 @@ export function RiskOverviewPanel({ data }: RiskOverviewPanelProps) {
                             </div>
                         )}
                     </div>
-                    {data.port_risk && (
-                        <>
-                            <SeverityBar severity={data.port_risk.severity} />
-                            <p className="text-xs text-slate-400 leading-relaxed">{data.port_risk.details}</p>
+                        {data.port_risk && (
+                            <>
+                                <SeverityBar severity={data.port_risk.severity} />
+                                <div className="flex items-center gap-2">
+                                    <p className="text-xs text-slate-400 leading-relaxed flex-1">{data.port_risk.details}</p>
+                                </div>
+                                {/* AIS data source badge */}
+                                <div className="flex items-center gap-1.5">
+                                    <span
+                                        className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                                        style={{
+                                            color: data.port_risk.data_source === 'ais_live' ? '#10b981' : '#f59e0b',
+                                            background: data.port_risk.data_source === 'ais_live' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                                            border: `1px solid ${data.port_risk.data_source === 'ais_live' ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                                        }}
+                                    >
+                                        {data.port_risk.data_source === 'ais_live' ? '● AIS LIVE' : '⚠ ESTIMATED'}
+                                    </span>
+                                </div>
                             <div className="flex gap-4 text-xs font-mono text-slate-500">
                                 {data.port_risk.vessel_queue != null && (
                                     <div className="flex items-center gap-1"><Ship className="w-3 h-3" />{data.port_risk.vessel_queue} ships</div>
@@ -326,7 +350,48 @@ export function RiskOverviewPanel({ data }: RiskOverviewPanelProps) {
                 </motion.div>
             </div>
 
-            {/* ML Correlation Analysis Card */}
+            {/* Cold-start ML card — shown while collecting real data */}
+            {coldStart && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.55 }}
+                    className="glass-card rounded-xl p-5"
+                    style={{ borderColor: 'rgba(99,102,241,0.2)', boxShadow: '0 0 20px rgba(99,102,241,0.04)' }}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <Brain className="w-4 h-4 text-indigo-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="font-display text-sm font-semibold text-white tracking-wide">ML CORRELATION ANALYSIS</span>
+                                <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5">COLLECTING DATA</span>
+                            </div>
+                            <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                                The ML model trains exclusively on real AIS data collected from live analyses.
+                                It will activate automatically after <strong className="text-white">{coldStart.required} real runs</strong>.
+                                Run analyses to build up the dataset.
+                            </p>
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${Math.min(100, (coldStart.real_records_collected / coldStart.required) * 100)}%` }}
+                                        transition={{ duration: 0.8, ease: 'easeOut' }}
+                                        className="h-full rounded-full bg-indigo-400"
+                                    />
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                                    {coldStart.real_records_collected} / {coldStart.required} runs
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+
             {ml && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}

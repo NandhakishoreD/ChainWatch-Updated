@@ -90,47 +90,32 @@ class PortAgent(BaseAgent):
         # Get real AIS data
         ais_metrics = await self._get_real_port_data(region)
 
-        # If AIS data unavailable, use region-specific baseline estimates
-        # based on historical vessel traffic averages for each port.
+        # If AIS data unavailable, fall back to static baseline estimates for the
+        # 3 supported regions only. These are NOT used for ML training — the data_source
+        # field will be set to "baseline_estimate" so the logger skips ML training.
         if ais_metrics is None or ais_metrics.get("error"):
             port_name = self.settings.regions.get(region, {}).get("port", region)
+            print(f"[PortAgent] ⚠️  AIS unavailable for {region} — using static baseline estimate. This run will NOT be logged for ML training.")
 
+            # Only the 3 regions the app actually supports
             BASELINE_ESTIMATES = {
-                "Shanghai":     {"vessel_count": 45, "stationary_count": 12, "moored_count": 8,  "avg_speed": 4.2},
-                "Rotterdam":    {"vessel_count": 38, "stationary_count": 8,  "moored_count": 10, "avg_speed": 3.8},
-                "Los Angeles":  {"vessel_count": 30, "stationary_count": 10, "moored_count": 7,  "avg_speed": 3.1},
-                "Singapore":    {"vessel_count": 55, "stationary_count": 14, "moored_count": 12, "avg_speed": 4.5},
-                "Hamburg":      {"vessel_count": 28, "stationary_count": 7,  "moored_count": 6,  "avg_speed": 3.5},
-                "Shenzhen":     {"vessel_count": 40, "stationary_count": 10, "moored_count": 9,  "avg_speed": 4.0},
-                "Ningbo":       {"vessel_count": 42, "stationary_count": 11, "moored_count": 9,  "avg_speed": 4.1},
-                "Busan":        {"vessel_count": 35, "stationary_count": 9,  "moored_count": 8,  "avg_speed": 3.9},
-                "Hong Kong":    {"vessel_count": 48, "stationary_count": 13, "moored_count": 11, "avg_speed": 4.3},
-                "Antwerp":      {"vessel_count": 32, "stationary_count": 8,  "moored_count": 7,  "avg_speed": 3.6},
-                "Long Beach":   {"vessel_count": 28, "stationary_count": 9,  "moored_count": 6,  "avg_speed": 3.0},
-                "New York":     {"vessel_count": 25, "stationary_count": 6,  "moored_count": 5,  "avg_speed": 3.3},
-                "Tokyo":        {"vessel_count": 33, "stationary_count": 8,  "moored_count": 7,  "avg_speed": 3.7},
-                "Savannah":     {"vessel_count": 18, "stationary_count": 4,  "moored_count": 4,  "avg_speed": 3.2},
-                "Seattle":      {"vessel_count": 15, "stationary_count": 3,  "moored_count": 3,  "avg_speed": 3.0},
-                "Southampton":  {"vessel_count": 20, "stationary_count": 5,  "moored_count": 4,  "avg_speed": 3.4},
-                "Valencia":     {"vessel_count": 22, "stationary_count": 5,  "moored_count": 5,  "avg_speed": 3.5},
-                "Piraeus":      {"vessel_count": 26, "stationary_count": 7,  "moored_count": 5,  "avg_speed": 3.3},
-                "Vancouver":    {"vessel_count": 16, "stationary_count": 4,  "moored_count": 3,  "avg_speed": 3.1},
-                "Salalah":      {"vessel_count": 12, "stationary_count": 3,  "moored_count": 2,  "avg_speed": 3.6},
+                "Shanghai":    {"vessel_count": 45, "stationary_count": 12, "moored_count": 8,  "avg_speed": 4.2},
+                "Rotterdam":   {"vessel_count": 38, "stationary_count": 8,  "moored_count": 10, "avg_speed": 3.8},
+                "Los Angeles": {"vessel_count": 30, "stationary_count": 10, "moored_count": 7,  "avg_speed": 3.1},
             }
             est = BASELINE_ESTIMATES.get(region, {"vessel_count": 20, "stationary_count": 5, "moored_count": 4, "avg_speed": 3.5})
 
-            vessel_count    = est["vessel_count"]
+            vessel_count     = est["vessel_count"]
             stationary_count = est["stationary_count"]
-            moored_count    = est["moored_count"]
-            avg_speed       = est["avg_speed"]
+            moored_count     = est["moored_count"]
+            avg_speed        = est["avg_speed"]
 
-            severity = self._calculate_severity_from_vessels(vessel_count, stationary_count)
+            severity         = self._calculate_severity_from_vessels(vessel_count, stationary_count)
             congestion_level = self._get_congestion_level(severity)
-            avg_delay = self._estimate_delay_from_congestion(severity, vessel_count)
+            avg_delay        = self._estimate_delay_from_congestion(severity, vessel_count)
 
-            # Build a clean operational description (same format as real AIS data)
             details = (
-                f"{port_name} has {vessel_count} vessels detected in the area. "
+                f"{port_name} has approximately {vessel_count} vessels in the area (estimated). "
                 f"{stationary_count} vessels are stationary (anchored/waiting). "
                 f"{moored_count} vessels are moored at berths. "
                 f"Average vessel speed: {avg_speed:.1f} knots. "
@@ -150,24 +135,28 @@ class PortAgent(BaseAgent):
                 details=details,
                 vessel_queue=vessel_count,
                 avg_delay_hours=round(avg_delay, 1),
+                avg_speed=avg_speed,
+                stationary_count=stationary_count,
+                moored_count=moored_count,
+                data_source="baseline_estimate",
             )
 
         # Process real AIS data
-        vessel_count = ais_metrics.get("vessel_count", 0)
+        vessel_count     = ais_metrics.get("vessel_count", 0)
         stationary_count = ais_metrics.get("stationary_count", 0)
-        avg_speed = ais_metrics.get("avg_speed", 0)
-        moored_count = ais_metrics.get("moored_count", 0)
+        avg_speed        = ais_metrics.get("avg_speed", 0.0)
+        moored_count     = ais_metrics.get("moored_count", 0)
 
         # Calculate severity and congestion
-        severity = self._calculate_severity_from_vessels(vessel_count, stationary_count)
+        severity         = self._calculate_severity_from_vessels(vessel_count, stationary_count)
         congestion_level = self._get_congestion_level(severity)
-        avg_delay = self._estimate_delay_from_congestion(severity, vessel_count)
+        avg_delay        = self._estimate_delay_from_congestion(severity, vessel_count)
 
-        # Build detailed description
         port_name = self.settings.regions.get(region, {}).get("port", region)
+        print(f"[PortAgent] ✅ Real AIS data: {vessel_count} vessels, {stationary_count} stationary, speed={avg_speed:.1f}kn")
 
         details = (
-            f"{port_name} has {vessel_count} vessels detected in the area. "
+            f"{port_name} has {vessel_count} vessels detected in the area (live AIS). "
             f"{stationary_count} vessels are stationary (anchored/waiting). "
             f"{moored_count} vessels are moored at berths. "
             f"Average vessel speed: {avg_speed:.1f} knots. "
@@ -188,4 +177,8 @@ class PortAgent(BaseAgent):
             details=details,
             vessel_queue=vessel_count,
             avg_delay_hours=round(avg_delay, 1),
+            avg_speed=round(avg_speed, 2),
+            stationary_count=stationary_count,
+            moored_count=moored_count,
+            data_source="ais_live",
         )

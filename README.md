@@ -72,14 +72,9 @@ AISSTREAM_API_KEY=your-aisstream-key
 
 ### 3. Bootstrap the Machine Learning Model
 
-To solve the "cold start" problem, ChainWatch uses a local ML model that must be trained before the first run. The repository includes a bootstrap script that safely generates ~200 realistic, highly-correlated historical data samples and trains the initial Random Forest and Ridge Regression models.
+To solve the "cold start" problem, ChainWatch uses a real-time ML pipeline that exclusively uses live AIS and environmental metrics. The system implements a robust "cold-start" mechanism that requires **30 real-world data points** before model activation. 
 
-```bash
-# Generate seed data and automatically train the initial ML model
-python -m backend.ml.seed_training_data
-```
-
-*(Note: As the system runs in production, it will continuously append real-world analysis runs to `backend/data/risk_history.jsonl` allowing the ML to learn and drift over time).*
+As the system runs in production, the background orchestrator will continuously append real-world analysis runs to `backend/data/risk_history.jsonl`. Once 30 runs are accumulated, the ML models (Random Forest and Ridge Regression) will automatically train and activate.
 
 ### 4. Start the Application
 

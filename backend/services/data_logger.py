@@ -1,7 +1,6 @@
-"""Data logger for recording risk analysis runs to build ML training data."""
+"""Data logger for recording real risk analysis runs to build ML training data."""
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -17,33 +16,46 @@ def ensure_data_dir():
 
 def log_analysis_run(
     region: str,
-    news_risk: dict | None,
-    weather_risk: dict | None,
-    port_risk: dict | None,
-    aggregated_risk: dict | None,
-):
+    news_risk,
+    weather_risk,
+    port_risk,
+    aggregated_risk,
+) -> bool:
     """
     Append a single analysis run to the JSONL history file.
-    
-    This builds up historical data used to train the ML model.
+
+    IMPORTANT: Only logs runs where the port data came from live AIS (data_source="ais_live").
+    Baseline-estimate runs are skipped to ensure the ML model trains on real data only.
+
+    Returns True if the record was logged, False if it was skipped.
     """
     ensure_data_dir()
+
+    # Skip runs that used the static fallback — they are not real observations.
+    port_data_source = getattr(port_risk, "data_source", "baseline_estimate")
+    if port_data_source != "ais_live":
+        print(f"[DataLogger] Skipping record for {region} — port data is a baseline estimate, not real AIS.")
+        return False
 
     record = {
         "timestamp": datetime.utcnow().isoformat(),
         "region": region,
+        "port_data_source": port_data_source,
         # News features
-        "news_severity": getattr(news_risk, "severity", 1) if news_risk else 1,
-        "news_event_type": getattr(news_risk, "event_type", "none") if news_risk else "none",
+        "news_severity":    getattr(news_risk, "severity", 1) if news_risk else 1,
+        "news_event_type":  getattr(news_risk, "event_type", "none") if news_risk else "none",
         # Weather features
         "weather_severity": getattr(weather_risk, "severity", 1) if weather_risk else 1,
-        "temperature_c": getattr(weather_risk, "temperature_c", None) if weather_risk else None,
-        "wind_speed_kmh": getattr(weather_risk, "wind_speed_kmh", None) if weather_risk else None,
-        "rainfall_mm": getattr(weather_risk, "rainfall_mm", None) if weather_risk else None,
-        # Port features
-        "port_severity": getattr(port_risk, "severity", 1) if port_risk else 1,
-        "vessel_count": getattr(port_risk, "vessel_queue", 0) if port_risk else 0,
-        "avg_delay_hours": getattr(port_risk, "avg_delay_hours", 0) if port_risk else 0,
+        "temperature_c":    getattr(weather_risk, "temperature_c", None) if weather_risk else None,
+        "wind_speed_kmh":   getattr(weather_risk, "wind_speed_kmh", None) if weather_risk else None,
+        "rainfall_mm":      getattr(weather_risk, "rainfall_mm", None) if weather_risk else None,
+        # Port features — real AIS values
+        "port_severity":    getattr(port_risk, "severity", 1) if port_risk else 1,
+        "vessel_count":     getattr(port_risk, "vessel_queue", 0) if port_risk else 0,
+        "avg_speed":        getattr(port_risk, "avg_speed", None) if port_risk else None,
+        "stationary_count": getattr(port_risk, "stationary_count", None) if port_risk else None,
+        "moored_count":     getattr(port_risk, "moored_count", None) if port_risk else None,
+        "avg_delay_hours":  getattr(port_risk, "avg_delay_hours", 0) if port_risk else 0,
         "congestion_level": getattr(port_risk, "congestion_level", "low") if port_risk else "low",
         # Aggregated output (used as training labels)
         "heuristic_risk_score": getattr(aggregated_risk, "risk_score", 1.0) if aggregated_risk else 1.0,
@@ -53,15 +65,18 @@ def log_analysis_run(
     try:
         with open(HISTORY_FILE, "a") as f:
             f.write(json.dumps(record) + "\n")
+        print(f"[DataLogger] ✅ Logged real AIS record for {region} (total: {get_record_count()})")
+        return True
     except Exception as e:
         print(f"[DataLogger] Failed to write record: {e}")
+        return False
 
 
 def load_history() -> list[dict]:
     """Load all historical analysis records."""
     if not HISTORY_FILE.exists():
         return []
-    
+
     records = []
     with open(HISTORY_FILE, "r") as f:
         for line in f:

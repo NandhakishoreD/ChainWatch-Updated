@@ -20,6 +20,10 @@ export interface PortRisk {
   details: string;
   vessel_queue: number | null;
   avg_delay_hours: number | null;
+  avg_speed: number | null;
+  stationary_count: number | null;
+  moored_count: number | null;
+  data_source: 'ais_live' | 'baseline_estimate';
 }
 
 export type RiskLevel = 'Low' | 'Medium' | 'High';
@@ -123,6 +127,14 @@ export interface MLAnalysis {
   training_samples: number;
   model_r2_risk: number;
   model_r2_delay: number;
+  port_data_source?: string;
+}
+
+// Returned by the backend when not enough real data has been collected yet
+export interface ColdStartML {
+  status: 'insufficient_data';
+  real_records_collected: number;
+  required: number;
 }
 
 // Risk Overview types
@@ -152,14 +164,8 @@ export interface RiskOverviewData {
     temperature_c: number | null;
     wind_speed_kmh: number | null;
   } | null;
-  port_risk: {
-    severity: number;
-    congestion_level: string;
-    details: string;
-    vessel_queue: number | null;
-    avg_delay_hours: number | null;
-  } | null;
-  ml_analysis: MLAnalysis | null;
+  port_risk: PortRisk | null;
+  ml_analysis: MLAnalysis | ColdStartML | null;
   explanation: string | null;
   vessel_count: number;
   vessels: VesselData[];
